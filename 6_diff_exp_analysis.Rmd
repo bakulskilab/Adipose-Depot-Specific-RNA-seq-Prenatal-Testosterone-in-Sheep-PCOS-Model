@@ -1,0 +1,1085 @@
+---
+title: "THP1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r lib, echo=TRUE, results='hide', message=F, warning=F, include=FALSE}
+library(DESeq2)
+library(ggplot2)
+library(EnhancedVolcano)
+library(grid)
+library(gridExtra)
+library(gridGraphics)
+library(magrittr)
+library(openxlsx)
+
+library(knitr)
+
+path <- "F:/Drive/Misc/RNAseq/Sheep_RNAseq/Fat_Depos/"
+
+```
+
+## Meta data setup and load counts
+
+Load table of counts per gene from featureCount output and meta data. 
+
+```{r files}
+#load counts, clean up column names
+counts <- read.table(file.path(path,"Data/counts"), header=T)
+gene_info <- counts[,1:6]
+counts <- counts[,7:ncol(counts)]
+names(counts) <- gsub('.*\\STAR.|\\.Aligned.*','',names(counts))
+names(counts) <- gsub('\\.','_',names(counts))
+rownames(counts) <- gene_info$Geneid
+
+#load meta data
+meta <- read.table(file.path(path,"Data/Run_2878_padmanabha_DemuxStats.txt"),header=T)
+meta$id <- paste0('Sample_',meta$SampleID)
+
+#treatment factors formating
+meta$Description <- as.character(meta$Description)
+meta$tissue <- substring(meta$Description,1,3)
+meta$sheep <- gsub('[A-Z]','',meta$Description)
+meta$treat <- sapply(meta$Description, FUN=function(x) substring(x, nchar(x)))
+meta <- meta[,c('id','tissue','sheep','treat')]
+meta$group <- paste0(meta$tissue, meta$treat)
+meta$sheep <- ifelse(meta$sheep=='98', '098', meta$sheep)
+
+#match order
+table(meta$id %in% colnames(counts))
+counts <- counts[,match(meta$id, colnames(counts))]
+
+table(meta$tissue, meta$sheep)
+table(meta$tissue, meta$treat)
+
+save(gene_info, counts, meta, file=file.path(path,'Data/count_data.RDA'))
+```
+
+
+## Loading into DESeq2
+
+```{r}
+
+load(file.path(path,'Data/count_data.RDA'))
+
+#make deseq object
+deseq.ds <- DESeqDataSetFromMatrix(countData = counts,
+                                    colData = meta,
+                                    design = ~ treat)
+```
+
+
+## Construct Descriptive Table
+
+Table with columns: id, treatment, number reads, number genes
+
+```{r}
+tab1 <- meta[,c("id", "Treatment")]
+
+summ <- read.table(file.path(path,"Data/counts.summary"), header=T)
+
+#get number reads
+names(summ) <- gsub('.*\\STAR.Sample_|\\.Aligned.*','',names(summ))
+names(summ) <- gsub('\\.','_',names(summ))
+rownames(summ) <- summ[,1]
+summ <- summ[,-1]
+
+reads <- summ[1,]
+reads <- reads[tab1$id]
+tab1$reads <- as.numeric(reads)
+
+#compute n genes from counts
+n_genes <- colSums(counts(deseq.ds)>0)
+identical(names(n_genes),tab1$id)
+tab1$genes <- n_genes
+
+summary(aov(reads~Treatment,data=tab1))
+summary(aov(genes~Treatment,data=tab1))
+
+
+tab1$id <- gsub('_','-',tab1$id)
+write.csv(tab1, file=file.path(path,"Results/descriptives_table.csv"), row.names=F, quote=F)
+```
+
+
+## PCA Plot
+
+
+```{r}
+#PCA plot
+vsd <- vst(deseq.ds)
+
+plotPCA(vsd, "group")
+pcs <- plotPCA(vsd, "group", returnData=TRUE)
+pcs$treat <- substr(pcs$group, 4, 4)
+pcs$tissue <- substr(pcs$group, 1, 3)
+pca.group <- ggplot(pcs, aes(x=PC1, y=PC2, col=tissue, shape=treat)) +
+  theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=18),
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=12),
+        panel.background = element_blank(),
+        panel.grid = element_blank(),
+        axis.line = element_line(size=0.5)) +
+  scale_shape_manual(values=c(19, 1))+
+  geom_point(size=3.1, stroke=1.1) +
+  xlab("PC1: 50% variance") + ylab("PC2: 11% variance")
+
+
+pca.group
+
+ggsave(pca.treat, file=file.path(path,"Results/PC_plot.png"))
+
+
+isolate_pc <- function(fat){
+  deseq.fat <- deseq.ds[,deseq.ds$tissue==fat]
+  vsd.fat <- vst(deseq.fat)
+  plotPCA(vsd.fat, "group")
+}
+
+isolate_pc('VAT')
+isolate_pc('SAT')
+isolate_pc('CAT')
+isolate_pc('RAT')
+
+
+getPCs = function(object, intgroup="condition", ntop=500)
+{
+  # calculate the variance for each gene
+  rv <- rowVars(assay(object))
+
+  # select the ntop genes by variance
+  select <- order(rv, decreasing=TRUE)[seq_len(min(ntop, length(rv)))]
+
+  # perform a PCA on the data in assay(x) for the selected genes
+  pca <- prcomp(t(assay(object)[select,]))
+
+  # the contribution to the total variance for each component
+  percentVar <- pca$sdev^2 / sum( pca$sdev^2 )
+
+  if (!all(intgroup %in% names(colData(object)))) {
+    stop("the argument 'intgroup' should specify columns of colData(dds)")
+  }
+
+  intgroup.df <- as.data.frame(colData(object)[, intgroup, drop=FALSE])
+  
+  # add the intgroup factors together to create a new grouping factor
+  group <- if (length(intgroup) > 1) {
+    factor(apply( intgroup.df, 1, paste, collapse=":"))
+  } else {
+    colData(object)[[intgroup]]
+  }
+
+  # assembly the data for the plot
+  d <- data.frame(pca$x, group=group, intgroup.df, name=colnames(object))
+
+  attr(d, "percentVar") <- percentVar
+  return(d)
+
+}
+
+pcs <- getPCs(vsd, "treat")
+ggplot(pcs, aes(x=PC2, y=PC3, col=group)) + 
+  #scale_color_discrete(name='Treatment', labels=c('Control','DCVC','DCVC+LPS','LPS')) +
+  theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=18),
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=12),
+        panel.background = element_blank(),
+        panel.grid = element_blank(),
+        axis.line = element_line(size=0.5)) +
+  geom_point(size=3.1, stroke=1.1) +
+  xlab("PC2") + ylab("PC3")
+
+pcs <- getPCs(vsd, "group")
+pcs$treat <- substr(pcs$group, 4, 4)
+pcs$tissue <- substr(pcs$group, 1, 3)
+ggplot(pcs, aes(x=PC2, y=PC3, col=tissue, shape=treat)) + 
+  theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=18),
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=12),
+        panel.background = element_blank(),
+        panel.grid = element_blank(),
+        axis.line = element_line(size=0.5)) +
+  geom_point(size=3.1, stroke=1.1) +
+  scale_shape_manual(values=c(19, 1))+
+  xlab("PC2") + ylab("PC3")
+```
+
+```{r replicate}
+library(corrplot)
+
+reps <- counts(deseq.ds)
+reps.cat <- reps[,c('Sample_126166','Sample_129861')]
+
+cor(reps.cat) #0.88
+smoothScatter(reps.cat[,1], reps.cat[,2], xlab='Sample_126166', ylab='Sample_129861')
+
+
+reps.catall <- reps[,meta[meta$group=='CATT','id']]
+M <- cor(reps.catall)
+meta[match(rownames(M),meta$id),]
+smoothScatter(reps.cat2[,1], reps.cat2[,2], xlab='Sample_126165', ylab='Sample_126163')
+corrplot(M, type='upper', method='ellipse', addCoef.col='black')
+
+```
+
+## Fit models
+
+```{r model}
+library(RUVSeq)
+library(edgeR)
+
+### RUVr
+
+ds <- deseq.ds
+ds$group <- as.factor(ds$group)
+design(ds) <- ~ group
+
+set <- newSeqExpressionSet(counts(ds, normalized=F), phenoData=AnnotatedDataFrame(data=as.data.frame(colData(ds))))
+y <- DGEList(counts=counts(ds, normalized=F), group=ds$group)
+design <- model.matrix(~ds$group)
+y <- calcNormFactors(y, method="upperquartile")
+y <- estimateGLMCommonDisp(y, design)
+y <- estimateGLMTagwiseDisp(y, design)
+
+fit <- glmFit(y, design)
+resid <- residuals(fit, type="deviance")
+ruv <- RUVr(x=set, cIdx=rownames(set), k=1, residuals=resid)
+
+
+ds.ruv <- DESeqDataSetFromMatrix(countData = counts(ruv), colData = pData(ruv), 
+                                 design = ~ W_1 + group)
+
+
+### fit model
+
+#tissue 1 vs all
+ds.tissueCAT <- ds.ruv
+ds.tissueCAT$CAT <- ds.tissueCAT$tissue=='CAT'
+ds.tissueCAT_c <- ds.tissueCAT[,ds.tissueCAT$treat=='C']
+ds.tissueCAT_t <- ds.tissueCAT[,ds.tissueCAT$treat=='T']
+#design(ds.tissueCAT) <- ~ W_1 + CAT
+design(ds.tissueCAT_c) <- ~ W_1 + CAT
+design(ds.tissueCAT_t) <- ~ W_1 + CAT
+#ds.tissueCAT <- DESeq(ds.tissueCAT)
+#resultsNames(ds.tissueCAT)
+ds.tissueCAT_c <- DESeq(ds.tissueCAT_c)
+resultsNames(ds.tissueCAT_c)
+ds.tissueCAT_t <- DESeq(ds.tissueCAT_t)
+resultsNames(ds.tissueCAT_t)
+
+
+ds.tissueRAT <- ds.ruv
+ds.tissueRAT$RAT <- ds.tissueRAT$tissue=='RAT'
+ds.tissueRAT_c <- ds.tissueRAT[,ds.tissueRAT$treat=='C']
+ds.tissueRAT_t <- ds.tissueRAT[,ds.tissueRAT$treat=='T']
+#design(ds.tissueRAT) <- ~ W_1 + RAT
+design(ds.tissueRAT_c) <- ~ W_1 + RAT
+design(ds.tissueRAT_t) <- ~ W_1 + RAT
+#ds.tissueRAT <- DESeq(ds.tissueRAT)
+#resultsNames(ds.tissueRAT)
+ds.tissueRAT_c <- DESeq(ds.tissueRAT_c)
+resultsNames(ds.tissueRAT_c)
+ds.tissueRAT_t <- DESeq(ds.tissueRAT_t)
+resultsNames(ds.tissueRAT_t)
+
+ds.tissueSAT <- ds.ruv
+ds.tissueSAT$SAT <- ds.tissueSAT$tissue=='SAT'
+ds.tissueSAT_c <- ds.tissueSAT[,ds.tissueSAT$treat=='C']
+ds.tissueSAT_t <- ds.tissueSAT[,ds.tissueSAT$treat=='T']
+#design(ds.tissueSAT) <- ~ W_1 + SAT
+design(ds.tissueSAT_c) <- ~ W_1 + SAT
+design(ds.tissueSAT_t) <- ~ W_1 + SAT
+#ds.tissueSAT <- DESeq(ds.tissueSAT)
+#resultsNames(ds.tissueSAT)
+ds.tissueSAT_c <- DESeq(ds.tissueSAT_c)
+resultsNames(ds.tissueSAT_c)
+ds.tissueSAT_t <- DESeq(ds.tissueSAT_t)
+resultsNames(ds.tissueSAT_t)
+
+ds.tissueVAT <- ds.ruv
+ds.tissueVAT$VAT <- ds.tissueVAT$tissue=='VAT'
+ds.tissueVAT_c <- ds.tissueVAT[,ds.tissueVAT$treat=='C']
+ds.tissueVAT_t <- ds.tissueVAT[,ds.tissueVAT$treat=='T']
+#design(ds.tissueVAT) <- ~ W_1 + VAT
+design(ds.tissueVAT_c) <- ~ W_1 + VAT
+design(ds.tissueVAT_t) <- ~ W_1 + VAT
+#ds.tissueVAT <- DESeq(ds.tissueVAT)
+#resultsNames(ds.tissueVAT)
+ds.tissueVAT_c <- DESeq(ds.tissueVAT_c)
+resultsNames(ds.tissueVAT_c)
+ds.tissueVAT_t <- DESeq(ds.tissueVAT_t)
+resultsNames(ds.tissueVAT_t)
+
+
+
+#T, within cell type
+ds.CAT <- ds.ruv
+ds.CAT$group <- relevel(ds.CAT$group, ref='CATC')
+ds.CAT <- DESeq(ds.CAT)
+resultsNames(ds.CAT)
+
+ds.RAT <- ds.ruv
+ds.RAT$group <- relevel(ds.RAT$group, ref='RATC')
+ds.RAT <- DESeq(ds.RAT)
+resultsNames(ds.RAT)
+
+ds.SAT <- ds.ruv
+ds.SAT$group <- relevel(ds.SAT$group, ref='SATC')
+ds.SAT <- DESeq(ds.SAT)
+resultsNames(ds.SAT)
+
+ds.VAT <- ds.ruv
+ds.VAT$group <- relevel(ds.VAT$group, ref='VATC')
+ds.VAT <- DESeq(ds.VAT)
+resultsNames(ds.VAT)
+
+### get results
+# res.C <- results(ds.tissueCAT, name="CATTRUE")
+# res.R <- results(ds.tissueRAT, name="RATTRUE")
+# res.S <- results(ds.tissueSAT, name="SATTRUE")
+# res.V <- results(ds.tissueVAT, name="VATTRUE")
+res.Cc <- results(ds.tissueCAT_c, name="CATTRUE")
+res.Rc <- results(ds.tissueRAT_c, name="RATTRUE")
+res.Sc <- results(ds.tissueSAT_c, name="SATTRUE")
+res.Vc <- results(ds.tissueVAT_c, name="VATTRUE")
+
+res.Ct <- results(ds.tissueCAT_t, name="CATTRUE")
+res.Rt <- results(ds.tissueRAT_t, name="RATTRUE")
+res.St <- results(ds.tissueSAT_t, name="SATTRUE")
+res.Vt <- results(ds.tissueVAT_t, name="VATTRUE")
+
+res.CAT <- results(ds.CAT, name="group_CATT_vs_CATC")
+res.RAT <- results(ds.RAT, name="group_RATT_vs_RATC")
+res.SAT <- results(ds.SAT, name="group_SATT_vs_SATC")
+res.VAT <- results(ds.VAT, name="group_VATT_vs_VATC")
+
+# match up filtering limits?
+# filts <- sapply(list(res.CAT,res.RAT,res.SAT,res.VAT), function(x) attr(x,"metadata")$filterThreshold)
+# m.filt <- max(filts)
+# 
+# ds.CAT <- ds.CAT[res.CAT$baseMean > m.filt,]
+# res.CAT <- results(ds.CAT, name="group_CATT_vs_CATC", independentFiltering = F)
+# ds.RAT <- ds.RAT[res.RAT$baseMean > m.filt,]
+# res.RAT <- results(ds.RAT, name="group_RATT_vs_RATC", independentFiltering = F)
+# ds.SAT <- ds.SAT[res.SAT$baseMean > m.filt,]
+# res.SAT <- results(ds.SAT, name="group_SATT_vs_SATC", independentFiltering = F)
+# ds.VAT <- ds.VAT[res.VAT$baseMean > m.filt,]
+# res.VAT <- results(ds.VAT, name="group_VATT_vs_VATC", independentFiltering = F)
+
+
+summary(res.C)
+
+
+summary(res.CAT)
+# out of 22305 with nonzero total read count
+# adjusted p-value < 0.1
+# LFC > 0 (up)       : 176, 0.79%
+# LFC < 0 (down)     : 28, 0.13%
+# outliers [1]       : 0, 0%
+# low counts [2]     : 10226, 46%
+# (mean count < 13)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+summary(res.RAT)
+# out of 22305 with nonzero total read count
+# adjusted p-value < 0.1
+# LFC > 0 (up)       : 12, 0.054%
+# LFC < 0 (down)     : 8, 0.036%
+# outliers [1]       : 0, 0%
+# low counts [2]     : 0, 0%
+# (mean count < 0)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+summary(res.SAT)
+# out of 22305 with nonzero total read count
+# adjusted p-value < 0.1
+# LFC > 0 (up)       : 194, 0.87%
+# LFC < 0 (down)     : 51, 0.23%
+# outliers [1]       : 0, 0%
+# low counts [2]     : 12783, 57%
+# (mean count < 37)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+summary(res.VAT)
+# out of 22305 with nonzero total read count
+# adjusted p-value < 0.1
+# LFC > 0 (up)       : 1281, 5.7%
+# LFC < 0 (down)     : 960, 4.3%
+# outliers [1]       : 0, 0%
+# low counts [2]     : 8096, 36%
+# (mean count < 5)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+
+
+#logFC shrinkage
+# shrink.C <- lfcShrink(ds.tissueCAT, coef="CATTRUE", res=res.C, type='apeglm')
+# shrink.C$pre_shrunk_logFC <- res.C$log2FoldChange
+# 
+# shrink.R <- lfcShrink(ds.tissueRAT, coef="RATTRUE", res=res.R, type='apeglm')
+# shrink.R$pre_shrunk_logFC <- res.R$log2FoldChange
+# 
+# shrink.S <- lfcShrink(ds.tissueSAT, coef="SATTRUE", res=res.S, type='apeglm')
+# shrink.S$pre_shrunk_logFC <- res.S$log2FoldChange
+# 
+# shrink.V <- lfcShrink(ds.tissueVAT, coef="VATTRUE", res=res.V, type='apeglm')
+# shrink.V$pre_shrunk_logFC <- res.V$log2FoldChange
+
+shrink.Cc <- lfcShrink(ds.tissueCAT_c, coef="CATTRUE", res=res.Cc, type='apeglm')
+shrink.Cc$pre_shrunk_logFC <- res.Cc$log2FoldChange
+
+shrink.Rc <- lfcShrink(ds.tissueRAT_c, coef="RATTRUE", res=res.Rc, type='apeglm')
+shrink.Rc$pre_shrunk_logFC <- res.Rc$log2FoldChange
+
+shrink.Sc <- lfcShrink(ds.tissueSAT_c, coef="SATTRUE", res=res.Sc, type='apeglm')
+shrink.Sc$pre_shrunk_logFC <- res.Sc$log2FoldChange
+
+shrink.Vc <- lfcShrink(ds.tissueVAT_c, coef="VATTRUE", res=res.Vc, type='apeglm')
+shrink.Vc$pre_shrunk_logFC <- res.Vc$log2FoldChange
+
+shrink.Ct <- lfcShrink(ds.tissueCAT_t, coef="CATTRUE", res=res.Ct, type='apeglm')
+shrink.Ct$pre_shrunk_logFC <- res.Ct$log2FoldChange
+
+shrink.Rt <- lfcShrink(ds.tissueRAT_t, coef="RATTRUE", res=res.Rt, type='apeglm')
+shrink.Rt$pre_shrunk_logFC <- res.Rt$log2FoldChange
+
+shrink.St <- lfcShrink(ds.tissueSAT_t, coef="SATTRUE", res=res.St, type='apeglm')
+shrink.St$pre_shrunk_logFC <- res.St$log2FoldChange
+
+shrink.Vt <- lfcShrink(ds.tissueVAT_t, coef="VATTRUE", res=res.Vt, type='apeglm')
+shrink.Vt$pre_shrunk_logFC <- res.Vt$log2FoldChange
+
+
+
+
+shrink.CAT <- lfcShrink(ds.CAT, coef="group_CATT_vs_CATC", res=res.CAT, type='apeglm')
+shrink.CAT$pre_shrunk_logFC <- res.CAT$log2FoldChange
+
+shrink.RAT <- lfcShrink(ds.RAT, coef="group_RATT_vs_RATC", res=res.RAT, type='apeglm')
+shrink.RAT$pre_shrunk_logFC <- res.RAT$log2FoldChange
+
+shrink.SAT <- lfcShrink(ds.SAT, coef="group_SATT_vs_SATC", res=res.SAT, type='apeglm')
+shrink.SAT$pre_shrunk_logFC <- res.SAT$log2FoldChange
+
+shrink.VAT <- lfcShrink(ds.VAT, coef="group_VATT_vs_VATC", res=res.VAT, type='apeglm')
+shrink.VAT$pre_shrunk_logFC <- res.VAT$log2FoldChange
+
+
+
+
+#order and filter
+augment.tab <- function(tab, tissue, test=T){
+  
+  #mean per group
+  counts <- counts(ds, normalized=T)
+  
+  if(test){
+    baseMean_T <- rowMeans(counts[,meta$group==paste0(tissue,'T')])
+    baseMean_C <- rowMeans(counts[,meta$group==paste0(tissue,'C')])
+    tab$baseMean_T <- baseMean_T[rownames(tab)]
+    tab$baseMean_C <- baseMean_C[rownames(tab)]
+  }else{
+    baseMean_tissue <- rowMeans(counts[,meta$tissue==tissue])
+    baseMean_other <- rowMeans(counts[,meta$tissue!=tissue])
+    tab[,paste0('baseMean_',tissue)] <- baseMean_tissue[rownames(tab)]
+    tab$baseMean_other <- baseMean_other[rownames(tab)]
+  }
+  
+  #order/filter
+  tab <- tab[!is.na(tab$padj),]
+  tab <- tab[order(tab$padj),]
+  
+  #fold change
+  tab$FC <- 2^tab$log2FoldChange
+  
+  #arrange columns
+  if(test){
+    tab <- tab[,c('baseMean_T','baseMean_C','FC','pre_shrunk_logFC','log2FoldChange','lfcSE','pvalue','padj')]
+  }else{
+    tab <- tab[c(paste0('baseMean_',tissue),'baseMean_other','FC','pre_shrunk_logFC','log2FoldChange','lfcSE','pvalue','padj')]
+  }
+  
+  tab
+}
+
+shrink.C <- augment.tab(shrink.C, 'CAT', test=F)
+shrink.R <- augment.tab(shrink.R, 'RAT', test=F)
+shrink.S <- augment.tab(shrink.S, 'SAT', test=F)
+shrink.V <- augment.tab(shrink.V, 'VAT', test=F)
+
+shrink.Cc <- augment.tab(shrink.Cc, 'CAT', test=F)
+shrink.Rc <- augment.tab(shrink.Rc, 'RAT', test=F)
+shrink.Sc <- augment.tab(shrink.Sc, 'SAT', test=F)
+shrink.Vc <- augment.tab(shrink.Vc, 'VAT', test=F)
+
+shrink.Ct <- augment.tab(shrink.Ct, 'CAT', test=F)
+shrink.Rt <- augment.tab(shrink.Rt, 'RAT', test=F)
+shrink.St <- augment.tab(shrink.St, 'SAT', test=F)
+shrink.Vt <- augment.tab(shrink.Vt, 'VAT', test=F)
+
+shrink.CAT <- augment.tab(shrink.CAT, 'CAT')
+shrink.RAT <- augment.tab(shrink.RAT, 'RAT')
+shrink.SAT <- augment.tab(shrink.SAT, 'SAT')
+shrink.VAT <- augment.tab(shrink.VAT, 'VAT')
+
+
+
+save(shrink.C, shrink.R, shrink.S, shrink.V, shrink.CAT, shrink.RAT, shrink.SAT, shrink.VAT, file=file.path(path,'Data/res_shrink.RDA'))
+
+save(shrink.Cc,shrink.Ct,shrink.Rc,shrink.Rt,shrink.Vc,shrink.Vt,shrink.Sc,shrink.St, file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
+
+```
+
+
+## Volcano Plots
+```{r volcano}
+
+load(file=file.path(path,'Data/res_shrink.RDA'))
+load(file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
+
+
+### cell type control
+
+EnhancedVolcano(shrink.Cc, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.Cc), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.Rc, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.Rc), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.Sc, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.Sc), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.Vc, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.Vc), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+
+
+
+### cell type t-treat
+
+EnhancedVolcano(shrink.Ct, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.Ct), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.Rt, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.Rt), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.St, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.St), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.Vt, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.Vt), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EnhancedVolcano(shrink.C, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.C), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.R, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.R), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.S, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.S), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.2)
+
+EnhancedVolcano(shrink.V, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.V), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.4)
+
+
+
+
+
+### T-treat
+
+
+EnhancedVolcano(shrink.CAT, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.CAT), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.4)
+
+EnhancedVolcano(shrink.RAT, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.RAT), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.4)
+
+EnhancedVolcano(shrink.SAT, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.SAT), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.4)
+
+EnhancedVolcano(shrink.VAT, 
+                title='',
+                subtitle='',
+                caption='',
+                lab=rownames(shrink.VAT), 
+                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                x='log2FoldChange',
+                y='padj',
+                ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                #xlim = c(-4.5,6.0),
+                #ylim = c(0,40),
+                legendVisible = F,
+                pCutoff=0.05,
+                FCcutoff=1,
+                transcriptLabSize = 3.5,
+                #drawConnectors = TRUE,
+                transcriptPointSize = 1.8,
+                colAlpha = 1,
+                transcriptLabhjust = 0.4)
+
+
+```
+
+
+
+Differential Gene Tables
+```{r}
+library(openxlsx)
+load(file=file.path(path,'Data/res_shrink.RDA'))
+load(file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
+
+write.gene.tab <- function(tab, filename){
+  tab$gene <- paste0(' ',rownames(tab))
+  tab <- tab[,c(9,1:8)]
+  tab[,2] <- round(tab[,2],2)
+  tab[,3] <- round(tab[,3],2)
+  tab[,4] <- round(tab[,4],2)
+  tab[,5] <- round(tab[,5],2)
+  tab[,6] <- round(tab[,6],2)
+  tab[,7] <- round(tab[,7],2)
+  tab[,8] <- signif(tab[,8],3)
+  tab[,9] <- signif(tab[,9],3)
+  
+  tab <- tab[,c(1,2,3,4,6,7,8,9)]
+  
+  tablist <- list(Order_Pval=tab, Order_FC=tab[abs(order(tab$log2FoldChange)),])
+  
+  write.xlsx(tablist, file.path(path,'Tables',filename), row.names=F)
+  
+  invisible(tab)
+}
+
+write.gene.tab(shrink.C, 'DE genes CAT cell type.xlsx')
+write.gene.tab(shrink.R, 'DE genes RAT cell type.xlsx')
+write.gene.tab(shrink.S, 'DE genes SAT cell type.xlsx')
+write.gene.tab(shrink.V, 'DE genes VAT cell type.xlsx')
+
+write.gene.tab(shrink.Cc, 'DE cell type T stratified/DE genes CAT cell type controls.xlsx')
+write.gene.tab(shrink.Rc, 'DE cell type T stratified/DE genes RAT cell type controls.xlsx')
+write.gene.tab(shrink.Sc, 'DE cell type T stratified/DE genes SAT cell type controls.xlsx')
+write.gene.tab(shrink.Vc, 'DE cell type T stratified/DE genes VAT cell type controls.xlsx')
+
+write.gene.tab(shrink.Ct, 'DE cell type T stratified/DE genes CAT cell type treat.xlsx')
+write.gene.tab(shrink.Rt, 'DE cell type T stratified/DE genes RAT cell type treat.xlsx')
+write.gene.tab(shrink.St, 'DE cell type T stratified/DE genes SAT cell type treat.xlsx')
+write.gene.tab(shrink.Vt, 'DE cell type T stratified/DE genes VAT cell type treat.xlsx')
+
+T.cat <- write.gene.tab(shrink.CAT, 'DE genes CAT T Treat.xlsx')
+T.rat <- write.gene.tab(shrink.RAT, 'DE genes RAT T Treat.xlsx')
+T.sat <- write.gene.tab(shrink.SAT, 'DE genes SAT T Treat.xlsx')
+T.vat <- write.gene.tab(shrink.VAT, 'DE genes VAT T Treat.xlsx')
+
+
+
+### common across tissues
+top.cat <- T.cat[abs(T.cat$log2FoldChange)>1 & T.cat$padj<0.05,]
+top.rat <- T.rat[abs(T.rat$log2FoldChange)>1 & T.rat$padj<0.05,]
+top.sat <- T.sat[abs(T.sat$log2FoldChange)>1 & T.sat$padj<0.05,]
+top.vat <- T.vat[abs(T.vat$log2FoldChange)>1 & T.vat$padj<0.05,]
+
+#count up those top in multiple tissues
+top.cross <- data.frame(gene=unique(c(rownames(top.vat),rownames(top.sat),rownames(top.rat),rownames(top.cat))))
+top.cross$cat <- top.cross$gene %in% rownames(top.cat)
+top.cross$rat <- top.cross$gene %in% rownames(top.rat)
+top.cross$sat <- top.cross$gene %in% rownames(top.sat)
+top.cross$vat <- top.cross$gene %in% rownames(top.vat)
+top.cross$sum <- top.cross$cat + top.cross$rat + top.cross$sat + top.cross$vat
+
+#only pick the ones signif in more than one tissue
+top.cross <- top.cross[top.cross$sum>1,]
+top.cross$gene <- paste0(" ",top.cross$gene)
+top.cross$CAT_logFC <- T.cat[match(top.cross$gene, T.cat$gene),'log2FoldChange']
+top.cross$CAT_padj <- T.cat[match(top.cross$gene, T.cat$gene),'padj']
+top.cross$RAT_logFC <- T.rat[match(top.cross$gene, T.rat$gene),'log2FoldChange']
+top.cross$RAT_padj <- T.rat[match(top.cross$gene, T.rat$gene),'padj']
+top.cross$SAT_logFC <- T.sat[match(top.cross$gene, T.sat$gene),'log2FoldChange']
+top.cross$SAT_padj <- T.sat[match(top.cross$gene, T.sat$gene),'padj']
+top.cross$VAT_logFC <- T.vat[match(top.cross$gene, T.vat$gene),'log2FoldChange']
+top.cross$VAT_padj <- T.vat[match(top.cross$gene, T.vat$gene),'padj']
+
+write.xlsx(top.cross, file=file.path(path,'Tables','DE genes cross adipose.xlsx'))
+
+### RNA Enrich tables
+library(org.Hs.eg.db)
+
+#load human ortholog table
+ortho <- read.table(file.path(path,"..","orthologs.txt"),sep="\t", header=T, stringsAsFactors = F)
+
+#get normalized counts
+norm.counts <- counts(ds.ruv, normalized=T)
+identical(meta$id, colnames(norm.counts))
+
+#make tables for LR path
+#tab = table from DESeq2 results
+#cut = what group(s) to include in average counts
+#file = desired name of file
+LRprep <- function(tab, cut=c('CATC','CATT','RATC','RATT','SATC','SATT','VATC','VATT'), file){
+  cut.counts <- norm.counts[,meta$group %in% cut]
+  tab.count <- cut.counts[match(rownames(tab),rownames(cut.counts)),]
+  tab.ortho <- ortho[match(rownames(tab),ortho$Sheep.gene.name),"Gene.name"]
+  tab.ortho <- unlist(mapIds(org.Hs.eg.db, tab.ortho, "ENTREZID", "SYMBOL"))
+  
+  LR <- data.frame(geneid=tab.ortho[match(rownames(tab),names(tab.ortho))],
+                   PValue=tab$pvalue,
+                   logFC=tab$log2FoldChange,
+                   norm_avg_readcount=rowMeans(tab.count))
+  LR <- LR[!is.na(LR$geneid),]
+  
+  write.table(LR, sep="\t", row.names=FALSE, quote=FALSE, file=file.path(path,"Tables/LRpath/",file))
+  
+  invisible(LR)
+}
+
+LR.C <- LRprep(shrink.C, file='CAT_cell_type_LR.txt')
+LR.R <- LRprep(shrink.R, file='RAT_cell_type_LR.txt')
+LR.S <- LRprep(shrink.S, file='SAT_cell_type_LR.txt')
+LR.V <- LRprep(shrink.V, file='VAT_cell_type_LR.txt')
+
+LR.CAT <- LRprep(shrink.CAT, file='CAT_T_treat_LR.txt')
+LR.RAT <- LRprep(shrink.RAT, file='RAT_T_treat_LR.txt')
+LR.SAT <- LRprep(shrink.SAT, file='SAT_T_treat_LR.txt')
+LR.VAT <- LRprep(shrink.VAT, file='VAT_T_treat_LR.txt')
+
+```
+
+
+Pathway Results from LRpath
+```{r lrpath}
+library(openxlsx)
+
+path.CAT <- read.xlsx(file.path(path,'Tables/LRpath/CAT_T_treat.xlsx'))
+path.RAT <- read.xlsx(file.path(path,'Tables/LRpath/RAT_T_treat.xlsx'))
+path.SAT <- read.xlsx(file.path(path,'Tables/LRpath/SAT_T_treat.xlsx'))
+path.VAT <- read.xlsx(file.path(path,'Tables/LRpath/VAT_T_treat.xlsx'))
+
+lr.process <- function(tab){
+  names(tab) <- c('id','name','type','n_genes','coeff','OR','pvalue','FDR','direction','Genes_p_05')
+  tab <- tab[order(tab$'pvalue'),]
+  tab
+}
+
+path.CAT <- lr.process(path.CAT)
+path.RAT <- lr.process(path.RAT)
+path.SAT <- lr.process(path.SAT)
+path.VAT <- lr.process(path.VAT)
+
+write.csv(path.CAT, file=file.path(path,'Tables/RNA-Enrich CAT T Treat.csv'), row.names=F)
+write.csv(path.RAT, file=file.path(path,'Tables/RNA-Enrich RAT T Treat.csv'), row.names=F)
+write.csv(path.SAT, file=file.path(path,'Tables/RNA-Enrich SAT T Treat.csv'), row.names=F)
+write.csv(path.VAT, file=file.path(path,'Tables/RNA-Enrich VAT T Treat.csv'), row.names=F)
+
+```
+
+
+Cross Compare DE Genes
+```{r }
+load(file=file.path(path,'Data/res_shrink.RDA'))
+load(file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
+
+common.C <- intersect(rownames(shrink.Cc),rownames(shrink.Ct))
+cor(shrink.Cc[common.C,'log2FoldChange'], shrink.Ct[common.C,'log2FoldChange'])
+#smoothScatter(shrink.Cc[common.C,'log2FoldChange'], shrink.Ct[common.C,'log2FoldChange'])
+
+common.R <- intersect(rownames(shrink.Rc),rownames(shrink.Rt))
+cor(shrink.Rc[common.R,'log2FoldChange'], shrink.Rt[common.R,'log2FoldChange'])
+
+common.S <- intersect(rownames(shrink.Sc),rownames(shrink.St))
+cor(shrink.Sc[common.S,'log2FoldChange'], shrink.St[common.S,'log2FoldChange'])
+
+common.V <- intersect(rownames(shrink.Vc),rownames(shrink.Vt))
+cor(shrink.Vc[common.V,'log2FoldChange'], shrink.Vt[common.V,'log2FoldChange'])
+
+```
+
+
