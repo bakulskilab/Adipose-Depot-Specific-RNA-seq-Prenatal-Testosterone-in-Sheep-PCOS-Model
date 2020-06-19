@@ -1,5 +1,5 @@
 ---
-title: "THP1"
+title: "Fat_Depots_PrenatalT"
 output: html_document
 ---
 
@@ -1062,7 +1062,9 @@ write.csv(path.VAT, file=file.path(path,'Tables/RNA-Enrich VAT T Treat.csv'), ro
 ```
 
 
-Cross Compare DE Genes
+# Cross Compare DE Genes
+
+## Cell type stratified
 ```{r }
 load(file=file.path(path,'Data/res_shrink.RDA'))
 load(file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
@@ -1082,4 +1084,66 @@ cor(shrink.Vc[common.V,'log2FoldChange'], shrink.Vt[common.V,'log2FoldChange'])
 
 ```
 
+## Prenatal T effects
 
+Venn Diagram
+```{r}
+library(eulerr)
+load(file=file.path(path,'Data/res_shrink.RDA'))
+
+get.top <- function(tab){
+  rownames(tab[abs(tab$log2FoldChange)>1 & tab$padj<0.05,])
+}
+
+top.CAT <- get.top(shrink.CAT)
+top.RAT <- get.top(shrink.RAT)
+top.SAT <- get.top(shrink.SAT)
+top.VAT <- get.top(shrink.VAT)
+
+
+vnc <- euler(list(CAT=top.CAT, RAT=top.RAT, SAT=top.SAT, VAT=top.VAT))
+p <- plot(vnc, quantities=T, adjust_lables=T, labels=T)
+
+pdf(file.path(path,"/Plots/venn_sig_genes.pdf"), height=10, width=10)
+p
+dev.off()
+
+vnc
+
+
+```
+Table of genes unique to tissue type
+```{r}
+library(openxlsx)
+
+tables <- list(CAT=shrink.CAT,
+               RAT=shrink.RAT,
+               SAT=shrink.SAT,
+               VAT=shrink.VAT)
+
+grab.unique <- function(fat1, fat2, fat3, fat4){
+  fat1[!(fat1 %in% c(fat2, fat3, fat4))]
+}
+
+uni.genes <- list()
+uni.genes$CAT <- grab.unique(top.CAT, top.RAT, top.SAT, top.VAT)
+uni.genes$RAT <- grab.unique(top.RAT, top.CAT, top.SAT, top.VAT)
+uni.genes$SAT <- grab.unique(top.SAT, top.CAT, top.RAT, top.VAT)
+uni.genes$VAT <- grab.unique(top.VAT, top.CAT, top.RAT, top.SAT)
+
+#grab results from table
+uni.gene.table <- lapply(names(uni.genes), FUN=function(tissue){
+  tab <- tables[[tissue]]
+  tab[uni.genes[[tissue]],]
+})
+names(uni.gene.table) <- names(uni.genes)
+
+#format tables
+uni.gene.table <- lapply(uni.gene.table, FUN=function(tab){
+  tab$gene = paste0(' ', rownames(tab))
+  tab = tab[,c(9,1,2,3,5,6,7,8)]
+  tab = tab[order(-abs(tab$log2FoldChange)),]
+})
+
+write.xlsx(uni.gene.table, file=file.path(path, 'Tables/DE genes prenatal T tissue unique.xlsx'))
+```
