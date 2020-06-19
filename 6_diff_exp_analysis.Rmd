@@ -1086,9 +1086,11 @@ cor(shrink.Vc[common.V,'log2FoldChange'], shrink.Vt[common.V,'log2FoldChange'])
 
 ## Prenatal T effects
 
-Venn Diagram
+Visualizing overlap
 ```{r}
 library(eulerr)
+library(UpSetR)
+
 load(file=file.path(path,'Data/res_shrink.RDA'))
 
 get.top <- function(tab){
@@ -1101,6 +1103,8 @@ top.SAT <- get.top(shrink.SAT)
 top.VAT <- get.top(shrink.VAT)
 
 
+### venn diagram
+
 vnc <- euler(list(CAT=top.CAT, RAT=top.RAT, SAT=top.SAT, VAT=top.VAT))
 p <- plot(vnc, quantities=T, adjust_lables=T, labels=T)
 
@@ -1111,7 +1115,19 @@ dev.off()
 vnc
 
 
+### upset plot
+
+top <- list(CAT=top.CAT, RAT=top.RAT, SAT=top.SAT, VAT=top.VAT)
+upset(fromList(top),
+      mainbar.y.label = "Number\nof Genes\n\n", 
+      order.by='freq',
+      keep.order=T,
+      text.scale=c(2.3, 1.8, 1.8, 2, 1.6, 1.6))
+
 ```
+
+
+
 Table of genes unique to tissue type
 ```{r}
 library(openxlsx)
