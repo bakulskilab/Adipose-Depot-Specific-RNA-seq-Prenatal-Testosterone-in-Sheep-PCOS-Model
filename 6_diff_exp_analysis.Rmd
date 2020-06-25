@@ -58,6 +58,9 @@ counts <- counts[,match(meta$id, colnames(counts))]
 table(meta$tissue, meta$sheep)
 table(meta$tissue, meta$treat)
 
+#type in demuxstats.txt file, Sample_126166 should be sheep 233
+meta[meta$id=='Sample_126166','sheep'] <- 233
+
 save(gene_info, counts, meta, file=file.path(path,'Data/count_data.RDA'))
 ```
 
@@ -80,13 +83,12 @@ deseq.ds <- DESeqDataSetFromMatrix(countData = counts,
 Table with columns: id, treatment, number reads, number genes
 
 ```{r}
-tab1 <- meta[,c("id", "Treatment")]
+tab1 <- meta[,c("id", "treat")]
 
 summ <- read.table(file.path(path,"Data/counts.summary"), header=T)
 
 #get number reads
-names(summ) <- gsub('.*\\STAR.Sample_|\\.Aligned.*','',names(summ))
-names(summ) <- gsub('\\.','_',names(summ))
+names(summ) <- gsub('.*\\STAR.|\\.Aligned.*','',names(summ))
 rownames(summ) <- summ[,1]
 summ <- summ[,-1]
 
@@ -99,8 +101,8 @@ n_genes <- colSums(counts(deseq.ds)>0)
 identical(names(n_genes),tab1$id)
 tab1$genes <- n_genes
 
-summary(aov(reads~Treatment,data=tab1))
-summary(aov(genes~Treatment,data=tab1))
+summary(aov(reads~treat,data=tab1))
+summary(aov(genes~treat,data=tab1))
 
 
 tab1$id <- gsub('_','-',tab1$id)
