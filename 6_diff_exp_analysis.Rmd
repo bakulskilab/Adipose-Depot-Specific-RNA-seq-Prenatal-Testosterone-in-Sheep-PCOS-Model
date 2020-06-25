@@ -17,6 +17,7 @@ library(gridExtra)
 library(gridGraphics)
 library(magrittr)
 library(openxlsx)
+library(gplots)
 
 library(knitr)
 
@@ -1162,4 +1163,96 @@ uni.gene.table <- lapply(uni.gene.table, FUN=function(tab){
 })
 
 write.xlsx(uni.gene.table, file=file.path(path, 'Tables/DE genes prenatal T tissue unique.xlsx'))
+```
+
+
+
+# Pathway Compare
+
+## Heatmaps
+```{r path_heat}
+
+path.CAT <- read.csv(file=file.path(path,'Tables/RNA-Enrich CAT T Treat.csv'), header=T)
+path.RAT <- read.csv(file=file.path(path,'Tables/RNA-Enrich RAT T Treat.csv'), header=T)
+path.SAT <- read.csv(file=file.path(path,'Tables/RNA-Enrich SAT T Treat.csv'), header=T)
+path.VAT <- read.csv(file=file.path(path,'Tables/RNA-Enrich VAT T Treat.csv'), header=T)
+
+# FDR < 0.01
+top.paths <- lapply(list(CAT=path.CAT, RAT=path.RAT, SAT=path.SAT, VAT=path.VAT),
+                    FUN=function(results){
+                      results[results$FDR<0.01,]
+                    })
+
+# how many with FDR < 0.01 for each?
+sapply(top.paths, nrow)
+
+# make matrix of odds ratios for the pathways
+construct_mat <- function(path.set){
+  CAT_paths <- path.CAT[match(path.set,path.CAT$id),]
+  RAT_paths <- path.RAT[match(path.set,path.RAT$id),]
+  SAT_paths <- path.SAT[match(path.set,path.SAT$id),]
+  VAT_paths <- path.VAT[match(path.set,path.VAT$id),]
+  
+  for_clust <- data.frame(CAT=CAT_paths$OR,
+                          RAT=RAT_paths$OR,
+                          SAT=SAT_paths$OR,
+                          VAT=VAT_paths$OR)
+  for_clust <- as.matrix(for_clust)
+  rownames(for_clust) <- CAT_paths$name
+  return(for_clust)
+}
+
+top.paths.collapsed <- lapply(top.paths, 
+                              FUN=function(X){
+                                X$id
+                              }) %>%
+                        unlist() %>%
+                        as.character() %>%
+                        unique() 
+
+OR_matrix <- construct_mat(top.paths.collapsed)
+
+
+# heatmap
+
+color.gradient <- colorRampPalette(c('firebrick4','firebrick3','gainsboro','royalblue3','royalblue4'))
+col.breaks <- c(seq(0,1,length=6),seq(1.2,2.1,length=5))
+#col.breaks <- c(0,0.66,1,1.33,2.33,4)
+
+#svglite(file.path(res,'heatmap_paths.svg'))
+heatmap.2(OR_matrix
+          ,trace='none'
+          ,density.info='none'
+          ,col=color.gradient(10)
+          ,breaks=col.breaks)
+
+heatmap.2(OR_matrix
+          ,dendrogram='none'
+          ,density.info='none'
+          ,trace='none'
+          ,col=color.gradient(10)
+          ,breaks=col.breaks
+          ,margins=c(0,0)
+          # ,lmat=rbind(c(0,0,4,0),
+          #             c(0,5,5,0),
+          #             c(3,1,2,0),
+          #             c(0,0,0,0))
+          # ,lhei=c(0.2,1.2,4,1)
+          # ,lwid=c(1,0.5,3,1.2)
+          ,cexCol=2.1
+          ,key.xlab="Enrichment Odds Ratio"
+          ,key.title="OR"
+          #,RowSideColors = ifelse(paths %in% common, "gray60", ifelse(paths %in% LRtop.gc$Id, "gray92", "gray2"))
+          #,labRow=NA
+          ,labCol=c("CAT", "RAT", "SAT", "VAT")
+          ,srtCol=0
+          #,adjCol=c(0.5,0.8)
+          ,sepwidth = c(0,0)
+          ,sepcolor = rgb(0,0,0,0,maxColorValue = 255)
+          )
+#par(xpd=TRUE)
+#legend(-0.1,0.5, legend=c("GC","Both","TC"),fill=c("gray92","gray60","gray2"), bty='n')
+#dev.off()
+
+
 ```
