@@ -71,6 +71,12 @@ save(gene_info, counts, meta, file=file.path(path,'Data/count_data.RDA'))
 
 load(file.path(path,'Data/count_data.RDA'))
 
+#remove extra VAT?
+extra.vat <- meta[meta$tissue=='VAT' & meta$sheep==179, 'id']
+
+meta <- meta[meta$id!=extra.vat,]
+counts <- counts[,meta$id]
+
 #make deseq object
 deseq.ds <- DESeqDataSetFromMatrix(countData = counts,
                                     colData = meta,
@@ -136,7 +142,7 @@ pca.group <- ggplot(pcs, aes(x=PC1, y=PC2, col=tissue, shape=treat)) +
 
 pca.group
 
-ggsave(pca.treat, file=file.path(path,"Results/PC_plot.png"))
+ggsave(pca.group, file=file.path(path,"Results/PC_plot.png"))
 
 
 isolate_pc <- function(fat){
@@ -215,27 +221,10 @@ ggplot(pcs, aes(x=PC2, y=PC3, col=tissue, shape=treat)) +
   xlab("PC2") + ylab("PC3")
 ```
 
-```{r replicate}
-library(corrplot)
+# Fit models
 
-reps <- counts(deseq.ds)
-reps.cat <- reps[,c('Sample_126166','Sample_129861')]
-
-cor(reps.cat) #0.88
-smoothScatter(reps.cat[,1], reps.cat[,2], xlab='Sample_126166', ylab='Sample_129861')
-
-
-reps.catall <- reps[,meta[meta$group=='CATT','id']]
-M <- cor(reps.catall)
-meta[match(rownames(M),meta$id),]
-smoothScatter(reps.cat2[,1], reps.cat2[,2], xlab='Sample_126165', ylab='Sample_126163')
-corrplot(M, type='upper', method='ellipse', addCoef.col='black')
-
-```
-
-## Fit models
-
-```{r model}
+## RUV
+```{r ruv}
 library(RUVSeq)
 library(edgeR)
 
@@ -259,110 +248,67 @@ ruv <- RUVr(x=set, cIdx=rownames(set), k=1, residuals=resid)
 
 ds.ruv <- DESeqDataSetFromMatrix(countData = counts(ruv), colData = pData(ruv), 
                                  design = ~ W_1 + group)
+```
 
-
-### fit model
+## Tissue difference models
+```{r tissue mods}
+tissues <- list(CAT='CAT',RAT='RAT',SAT='SAT',VAT='VAT')
 
 #tissue 1 vs all
-ds.tissueCAT <- ds.ruv
-ds.tissueCAT$CAT <- ds.tissueCAT$tissue=='CAT'
-ds.tissueCAT_c <- ds.tissueCAT[,ds.tissueCAT$treat=='C']
-ds.tissueCAT_t <- ds.tissueCAT[,ds.tissueCAT$treat=='T']
-#design(ds.tissueCAT) <- ~ W_1 + CAT
-design(ds.tissueCAT_c) <- ~ W_1 + CAT
-design(ds.tissueCAT_t) <- ~ W_1 + CAT
-#ds.tissueCAT <- DESeq(ds.tissueCAT)
-#resultsNames(ds.tissueCAT)
-ds.tissueCAT_c <- DESeq(ds.tissueCAT_c)
-resultsNames(ds.tissueCAT_c)
-ds.tissueCAT_t <- DESeq(ds.tissueCAT_t)
-resultsNames(ds.tissueCAT_t)
+tissue_mod <- function(tissue){
+  ds.fat = ds.ruv
+  ds.fat$FAT = ds.fat$tissue==tissue
+  names(colData(ds.fat))[which(names(colData(ds.fat))=='FAT')] <- tissue
+  
+  ds.fat_c <- ds.fat[,ds.fat$treat=='C']
+  ds.fat_t <- ds.fat[,ds.fat$treat=='T']
+  
+  design(ds.fat_c) <- as.formula(paste0('~ W_1 + ',tissue))
+  design(ds.fat_t) <- as.formula(paste0('~ W_1 + ',tissue))
+  
+  ds.fat_c <- DESeq(ds.fat_c)
+  ds.fat_t <- DESeq(ds.fat_t)
+  
+  models <- list(ds.fat_c, ds.fat_t)
+  names(models) <- c('C','T')
+  
+  return(models)
+}
 
+ds.tissue <- lapply(tissues, tissue_mod)
+```
 
-ds.tissueRAT <- ds.ruv
-ds.tissueRAT$RAT <- ds.tissueRAT$tissue=='RAT'
-ds.tissueRAT_c <- ds.tissueRAT[,ds.tissueRAT$treat=='C']
-ds.tissueRAT_t <- ds.tissueRAT[,ds.tissueRAT$treat=='T']
-#design(ds.tissueRAT) <- ~ W_1 + RAT
-design(ds.tissueRAT_c) <- ~ W_1 + RAT
-design(ds.tissueRAT_t) <- ~ W_1 + RAT
-#ds.tissueRAT <- DESeq(ds.tissueRAT)
-#resultsNames(ds.tissueRAT)
-ds.tissueRAT_c <- DESeq(ds.tissueRAT_c)
-resultsNames(ds.tissueRAT_c)
-ds.tissueRAT_t <- DESeq(ds.tissueRAT_t)
-resultsNames(ds.tissueRAT_t)
-
-ds.tissueSAT <- ds.ruv
-ds.tissueSAT$SAT <- ds.tissueSAT$tissue=='SAT'
-ds.tissueSAT_c <- ds.tissueSAT[,ds.tissueSAT$treat=='C']
-ds.tissueSAT_t <- ds.tissueSAT[,ds.tissueSAT$treat=='T']
-#design(ds.tissueSAT) <- ~ W_1 + SAT
-design(ds.tissueSAT_c) <- ~ W_1 + SAT
-design(ds.tissueSAT_t) <- ~ W_1 + SAT
-#ds.tissueSAT <- DESeq(ds.tissueSAT)
-#resultsNames(ds.tissueSAT)
-ds.tissueSAT_c <- DESeq(ds.tissueSAT_c)
-resultsNames(ds.tissueSAT_c)
-ds.tissueSAT_t <- DESeq(ds.tissueSAT_t)
-resultsNames(ds.tissueSAT_t)
-
-ds.tissueVAT <- ds.ruv
-ds.tissueVAT$VAT <- ds.tissueVAT$tissue=='VAT'
-ds.tissueVAT_c <- ds.tissueVAT[,ds.tissueVAT$treat=='C']
-ds.tissueVAT_t <- ds.tissueVAT[,ds.tissueVAT$treat=='T']
-#design(ds.tissueVAT) <- ~ W_1 + VAT
-design(ds.tissueVAT_c) <- ~ W_1 + VAT
-design(ds.tissueVAT_t) <- ~ W_1 + VAT
-#ds.tissueVAT <- DESeq(ds.tissueVAT)
-#resultsNames(ds.tissueVAT)
-ds.tissueVAT_c <- DESeq(ds.tissueVAT_c)
-resultsNames(ds.tissueVAT_c)
-ds.tissueVAT_t <- DESeq(ds.tissueVAT_t)
-resultsNames(ds.tissueVAT_t)
-
-
-
+## Prenatal T models
+```{r prenatal T mods}
 #T, within cell type
-ds.CAT <- ds.ruv
-ds.CAT$group <- relevel(ds.CAT$group, ref='CATC')
-ds.CAT <- DESeq(ds.CAT)
-resultsNames(ds.CAT)
+treat_mod <- function(tissue){
+  ds.fat <- ds.ruv
+  ds.fat$group <- relevel(ds.fat$group, ref=paste0(tissue,'C'))
+  ds.fat <- DESeq(ds.fat)
+}
 
-ds.RAT <- ds.ruv
-ds.RAT$group <- relevel(ds.RAT$group, ref='RATC')
-ds.RAT <- DESeq(ds.RAT)
-resultsNames(ds.RAT)
+ds.treat <- lapply(tissues, treat_mod)
+```
 
-ds.SAT <- ds.ruv
-ds.SAT$group <- relevel(ds.SAT$group, ref='SATC')
-ds.SAT <- DESeq(ds.SAT)
-resultsNames(ds.SAT)
+## process model tables
+```{r mod process}
 
-ds.VAT <- ds.ruv
-ds.VAT$group <- relevel(ds.VAT$group, ref='VATC')
-ds.VAT <- DESeq(ds.VAT)
-resultsNames(ds.VAT)
+res.tissue <- lapply(tissues, FUN=function(tissue){
+  ds.fat = ds.tissue[[tissue]]
+  res.C = results(ds.fat$C, name=paste0(tissue,'TRUE'))
+  res.T = results(ds.fat$T, name=paste0(tissue,'TRUE'))
+  
+  res <- list(res.C, res.T)
+  names(res) <- c('C','T')
+  
+  return(res)
+})
 
-### get results
-# res.C <- results(ds.tissueCAT, name="CATTRUE")
-# res.R <- results(ds.tissueRAT, name="RATTRUE")
-# res.S <- results(ds.tissueSAT, name="SATTRUE")
-# res.V <- results(ds.tissueVAT, name="VATTRUE")
-res.Cc <- results(ds.tissueCAT_c, name="CATTRUE")
-res.Rc <- results(ds.tissueRAT_c, name="RATTRUE")
-res.Sc <- results(ds.tissueSAT_c, name="SATTRUE")
-res.Vc <- results(ds.tissueVAT_c, name="VATTRUE")
+res.treat <- lapply(tissues, FUN=function(tissue){
+  ds.fat = ds.treat[[tissue]]
+  results(ds.fat, name=sprintf("group_%sT_vs_%sC", tissue, tissue))
+})
 
-res.Ct <- results(ds.tissueCAT_t, name="CATTRUE")
-res.Rt <- results(ds.tissueRAT_t, name="RATTRUE")
-res.St <- results(ds.tissueSAT_t, name="SATTRUE")
-res.Vt <- results(ds.tissueVAT_t, name="VATTRUE")
-
-res.CAT <- results(ds.CAT, name="group_CATT_vs_CATC")
-res.RAT <- results(ds.RAT, name="group_RATT_vs_RATC")
-res.SAT <- results(ds.SAT, name="group_SATT_vs_SATC")
-res.VAT <- results(ds.VAT, name="group_VATT_vs_VATC")
 
 # match up filtering limits?
 # filts <- sapply(list(res.CAT,res.RAT,res.SAT,res.VAT), function(x) attr(x,"metadata")$filterThreshold)
@@ -378,111 +324,31 @@ res.VAT <- results(ds.VAT, name="group_VATT_vs_VATC")
 # res.VAT <- results(ds.VAT, name="group_VATT_vs_VATC", independentFiltering = F)
 
 
-summary(res.C)
-
-
-summary(res.CAT)
-# out of 22305 with nonzero total read count
-# adjusted p-value < 0.1
-# LFC > 0 (up)       : 176, 0.79%
-# LFC < 0 (down)     : 28, 0.13%
-# outliers [1]       : 0, 0%
-# low counts [2]     : 10226, 46%
-# (mean count < 13)
-# [1] see 'cooksCutoff' argument of ?results
-# [2] see 'independentFiltering' argument of ?results
-
-summary(res.RAT)
-# out of 22305 with nonzero total read count
-# adjusted p-value < 0.1
-# LFC > 0 (up)       : 12, 0.054%
-# LFC < 0 (down)     : 8, 0.036%
-# outliers [1]       : 0, 0%
-# low counts [2]     : 0, 0%
-# (mean count < 0)
-# [1] see 'cooksCutoff' argument of ?results
-# [2] see 'independentFiltering' argument of ?results
-
-summary(res.SAT)
-# out of 22305 with nonzero total read count
-# adjusted p-value < 0.1
-# LFC > 0 (up)       : 194, 0.87%
-# LFC < 0 (down)     : 51, 0.23%
-# outliers [1]       : 0, 0%
-# low counts [2]     : 12783, 57%
-# (mean count < 37)
-# [1] see 'cooksCutoff' argument of ?results
-# [2] see 'independentFiltering' argument of ?results
-
-summary(res.VAT)
-# out of 22305 with nonzero total read count
-# adjusted p-value < 0.1
-# LFC > 0 (up)       : 1281, 5.7%
-# LFC < 0 (down)     : 960, 4.3%
-# outliers [1]       : 0, 0%
-# low counts [2]     : 8096, 36%
-# (mean count < 5)
-# [1] see 'cooksCutoff' argument of ?results
-# [2] see 'independentFiltering' argument of ?results
+lapply(res.treat, summary)
 
 
 
-#logFC shrinkage
-# shrink.C <- lfcShrink(ds.tissueCAT, coef="CATTRUE", res=res.C, type='apeglm')
-# shrink.C$pre_shrunk_logFC <- res.C$log2FoldChange
-# 
-# shrink.R <- lfcShrink(ds.tissueRAT, coef="RATTRUE", res=res.R, type='apeglm')
-# shrink.R$pre_shrunk_logFC <- res.R$log2FoldChange
-# 
-# shrink.S <- lfcShrink(ds.tissueSAT, coef="SATTRUE", res=res.S, type='apeglm')
-# shrink.S$pre_shrunk_logFC <- res.S$log2FoldChange
-# 
-# shrink.V <- lfcShrink(ds.tissueVAT, coef="VATTRUE", res=res.V, type='apeglm')
-# shrink.V$pre_shrunk_logFC <- res.V$log2FoldChange
+### shrinkage of logFC
 
-shrink.Cc <- lfcShrink(ds.tissueCAT_c, coef="CATTRUE", res=res.Cc, type='apeglm')
-shrink.Cc$pre_shrunk_logFC <- res.Cc$log2FoldChange
-
-shrink.Rc <- lfcShrink(ds.tissueRAT_c, coef="RATTRUE", res=res.Rc, type='apeglm')
-shrink.Rc$pre_shrunk_logFC <- res.Rc$log2FoldChange
-
-shrink.Sc <- lfcShrink(ds.tissueSAT_c, coef="SATTRUE", res=res.Sc, type='apeglm')
-shrink.Sc$pre_shrunk_logFC <- res.Sc$log2FoldChange
-
-shrink.Vc <- lfcShrink(ds.tissueVAT_c, coef="VATTRUE", res=res.Vc, type='apeglm')
-shrink.Vc$pre_shrunk_logFC <- res.Vc$log2FoldChange
-
-shrink.Ct <- lfcShrink(ds.tissueCAT_t, coef="CATTRUE", res=res.Ct, type='apeglm')
-shrink.Ct$pre_shrunk_logFC <- res.Ct$log2FoldChange
-
-shrink.Rt <- lfcShrink(ds.tissueRAT_t, coef="RATTRUE", res=res.Rt, type='apeglm')
-shrink.Rt$pre_shrunk_logFC <- res.Rt$log2FoldChange
-
-shrink.St <- lfcShrink(ds.tissueSAT_t, coef="SATTRUE", res=res.St, type='apeglm')
-shrink.St$pre_shrunk_logFC <- res.St$log2FoldChange
-
-shrink.Vt <- lfcShrink(ds.tissueVAT_t, coef="VATTRUE", res=res.Vt, type='apeglm')
-shrink.Vt$pre_shrunk_logFC <- res.Vt$log2FoldChange
+shrink.tissue <- lapply(tissues, FUN=function(tissue){
+  res.fat = res.tissue[[tissue]]
+  shrink.C <- lfcShrink(ds.tissue[[tissue]]$C, coef=paste0(tissue,'TRUE'), res=res.tissue[[tissue]]$C, type='apeglm')
+  shrink.T <- lfcShrink(ds.tissue[[tissue]]$T, coef=paste0(tissue,'TRUE'), res=res.tissue[[tissue]]$T, type='apeglm')
+  
+  shrink <- list(shrink.C, shrink.T)
+  names(shrink) <- c('C','T')
+  
+  return(shrink)
+})
 
 
+shrink.treat <- lapply(tissues, FUN=function(tissue){
+  res.fat = res.treat[[tissue]]
+  shrink <- lfcShrink(ds.treat[[tissue]], coef=sprintf("group_%sT_vs_%sC", tissue, tissue), res=res.treat[[tissue]], type='apeglm')
+})
 
 
-shrink.CAT <- lfcShrink(ds.CAT, coef="group_CATT_vs_CATC", res=res.CAT, type='apeglm')
-shrink.CAT$pre_shrunk_logFC <- res.CAT$log2FoldChange
-
-shrink.RAT <- lfcShrink(ds.RAT, coef="group_RATT_vs_RATC", res=res.RAT, type='apeglm')
-shrink.RAT$pre_shrunk_logFC <- res.RAT$log2FoldChange
-
-shrink.SAT <- lfcShrink(ds.SAT, coef="group_SATT_vs_SATC", res=res.SAT, type='apeglm')
-shrink.SAT$pre_shrunk_logFC <- res.SAT$log2FoldChange
-
-shrink.VAT <- lfcShrink(ds.VAT, coef="group_VATT_vs_VATC", res=res.VAT, type='apeglm')
-shrink.VAT$pre_shrunk_logFC <- res.VAT$log2FoldChange
-
-
-
-
-#order and filter
+### order and filter
 augment.tab <- function(tab, tissue, test=T){
   
   #mean per group
@@ -509,9 +375,9 @@ augment.tab <- function(tab, tissue, test=T){
   
   #arrange columns
   if(test){
-    tab <- tab[,c('baseMean_T','baseMean_C','FC','pre_shrunk_logFC','log2FoldChange','lfcSE','pvalue','padj')]
+    tab <- tab[,c('baseMean_T','baseMean_C','FC','log2FoldChange','lfcSE','pvalue','padj')]
   }else{
-    tab <- tab[c(paste0('baseMean_',tissue),'baseMean_other','FC','pre_shrunk_logFC','log2FoldChange','lfcSE','pvalue','padj')]
+    tab <- tab[c(paste0('baseMean_',tissue),'baseMean_other','FC','log2FoldChange','lfcSE','pvalue','padj')]
   }
   
   tab
@@ -537,12 +403,26 @@ shrink.RAT <- augment.tab(shrink.RAT, 'RAT')
 shrink.SAT <- augment.tab(shrink.SAT, 'SAT')
 shrink.VAT <- augment.tab(shrink.VAT, 'VAT')
 
+#run to get normalization factors for counts matrix
+ds <- DESeq(ds)
+
+#fix up results tables
+tab.tissue <- lapply(tissues, FUN=function(tissue){
+  res <- shrink.tissue[[tissue]]
+  
+  tab.C <- augment.tab(res$C, tissue, test=F)
+  tab.T <- augment.tab(res$C, tissue, test=F)
+  
+  list(C=tab.C, T=tab.T)
+})
+
+tab.treat <- lapply(tissues, FUN=function(tissue){
+  res <- shrink.treat[[tissue]]
+  tab <- augment.tab(res, tissue)
+})
 
 
-save(shrink.C, shrink.R, shrink.S, shrink.V, shrink.CAT, shrink.RAT, shrink.SAT, shrink.VAT, file=file.path(path,'Data/res_shrink.RDA'))
-
-save(shrink.Cc,shrink.Ct,shrink.Rc,shrink.Rt,shrink.Vc,shrink.Vt,shrink.Sc,shrink.St, file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
-
+save(tab.tissue, tab.treat, file=file.path(path,'Data/res_shrink.RDA'))
 ```
 
 
@@ -550,7 +430,6 @@ save(shrink.Cc,shrink.Ct,shrink.Rc,shrink.Rt,shrink.Vc,shrink.Vt,shrink.Sc,shrin
 ```{r volcano}
 
 load(file=file.path(path,'Data/res_shrink.RDA'))
-load(file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
 
 
 ### cell type control
