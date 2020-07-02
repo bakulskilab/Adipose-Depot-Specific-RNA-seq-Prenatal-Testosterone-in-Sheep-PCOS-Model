@@ -1067,6 +1067,18 @@ top.paths <- lapply(list(CAT=path.CAT, RAT=path.RAT, SAT=path.SAT, VAT=path.VAT)
 # how many with FDR < 0.01 for each?
 sapply(top.paths, nrow)
 
+# upset of pathways in common
+library(UpSetR)
+
+top.paths.names <- lapply(top.paths, FUN=function(tab){
+  tab$id
+})
+upset(fromList(top.paths.names),
+      mainbar.y.label = "Number\nof Pathways\n\n", 
+      order.by='freq',
+      keep.order=T,
+      text.scale=c(2.3, 1.8, 1.8, 1.5, 1.6, 1.6))
+
 # make matrix of odds ratios for the pathways
 construct_mat <- function(path.set){
   CAT_paths <- path.CAT[match(path.set,path.CAT$id),]
@@ -1101,7 +1113,7 @@ col.breaks <- c(seq(0,1,length=6),seq(1.2,2.1,length=5))
 #col.breaks <- c(0,0.66,1,1.33,2.33,4)
 
 #svglite(file.path(res,'heatmap_paths.svg'))
-heatmap.2(OR_matrix
+path_heat <- heatmap.2(OR_matrix
           ,trace='none'
           ,density.info='none'
           ,col=color.gradient(10)
@@ -1135,5 +1147,12 @@ heatmap.2(OR_matrix
 #legend(-0.1,0.5, legend=c("GC","Both","TC"),fill=c("gray92","gray60","gray2"), bty='n')
 #dev.off()
 
+
+#write excel file of pathways in heatmap
+OR_excel <- OR_matrix[path_heat$rowInd, path_heat$colInd]
+OR_excel <- cbind(rownames(OR_excel), OR_excel)
+colnames(OR_excel)[1] <- ''
+OR_excel <- OR_excel[rev(rownames(OR_excel)),]
+write.xlsx(OR_excel, file=file.path(path,'Tables/Pathway_heatmap_table_values.xlsx'))
 
 ```
