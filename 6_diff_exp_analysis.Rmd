@@ -567,15 +567,20 @@ LRprep <- function(tab, cut=c('CATC','CATT','RATC','RATT','SATC','SATT','VATC','
   invisible(LR)
 }
 
-LR.C <- LRprep(shrink.C, file='CAT_cell_type_LR.txt')
-LR.R <- LRprep(shrink.R, file='RAT_cell_type_LR.txt')
-LR.S <- LRprep(shrink.S, file='SAT_cell_type_LR.txt')
-LR.V <- LRprep(shrink.V, file='VAT_cell_type_LR.txt')
+LR.CC <- LRprep(tab.tissue$CAT$C, file='CAT_con_cell_type_LR.txt')
+LR.RC <- LRprep(tab.tissue$RAT$C, file='RAT_con_cell_type_LR.txt')
+LR.SC <- LRprep(tab.tissue$SAT$C, file='SAT_con_cell_type_LR.txt')
+LR.VC <- LRprep(tab.tissue$VAT$C, file='VAT_con_cell_type_LR.txt')
 
-LR.CAT <- LRprep(shrink.CAT, file='CAT_T_treat_LR.txt')
-LR.RAT <- LRprep(shrink.RAT, file='RAT_T_treat_LR.txt')
-LR.SAT <- LRprep(shrink.SAT, file='SAT_T_treat_LR.txt')
-LR.VAT <- LRprep(shrink.VAT, file='VAT_T_treat_LR.txt')
+LR.CT <- LRprep(tab.tissue$CAT$T, file='CAT_trt_cell_type_LR.txt')
+LR.RT <- LRprep(tab.tissue$RAT$T, file='RAT_trt_cell_type_LR.txt')
+LR.ST <- LRprep(tab.tissue$SAT$T, file='SAT_trt_cell_type_LR.txt')
+LR.VT <- LRprep(tab.tissue$VAT$T, file='VAT_trt_cell_type_LR.txt')
+
+LR.CAT <- LRprep(tab.treat$CAT, file='CAT_T_treat_LR.txt')
+LR.RAT <- LRprep(tab.treat$RAT, file='RAT_T_treat_LR.txt')
+LR.SAT <- LRprep(tab.treat$SAT, file='SAT_T_treat_LR.txt')
+LR.VAT <- LRprep(tab.treat$VAT, file='VAT_T_treat_LR.txt')
 
 ```
 
@@ -613,21 +618,13 @@ write.csv(path.VAT, file=file.path(path,'Tables/RNA-Enrich VAT T Treat.csv'), ro
 ## Cell type stratified
 ```{r }
 load(file=file.path(path,'Data/res_shrink.RDA'))
-load(file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
 
-common.C <- intersect(rownames(shrink.Cc),rownames(shrink.Ct))
-cor(shrink.Cc[common.C,'log2FoldChange'], shrink.Ct[common.C,'log2FoldChange'])
-#smoothScatter(shrink.Cc[common.C,'log2FoldChange'], shrink.Ct[common.C,'log2FoldChange'])
+tissue.corr <- function(FAT){
+  common <- intersect(rownames(tab.tissue[[FAT]]$C), rownames(tab.tissue[[FAT]]$T))
+  cor(tab.tissue[[FAT]]$C[common,'log2FoldChange'], tab.tissue[[FAT]]$T[common,'log2FoldChange'])
+}
 
-common.R <- intersect(rownames(shrink.Rc),rownames(shrink.Rt))
-cor(shrink.Rc[common.R,'log2FoldChange'], shrink.Rt[common.R,'log2FoldChange'])
-
-common.S <- intersect(rownames(shrink.Sc),rownames(shrink.St))
-cor(shrink.Sc[common.S,'log2FoldChange'], shrink.St[common.S,'log2FoldChange'])
-
-common.V <- intersect(rownames(shrink.Vc),rownames(shrink.Vt))
-cor(shrink.Vc[common.V,'log2FoldChange'], shrink.Vt[common.V,'log2FoldChange'])
-
+sapply(tissues, tissue.corr)
 ```
 
 ## Prenatal T effects
@@ -643,15 +640,12 @@ get.top <- function(tab){
   rownames(tab[abs(tab$log2FoldChange)>1 & tab$padj<0.05,])
 }
 
-top.CAT <- get.top(shrink.CAT)
-top.RAT <- get.top(shrink.RAT)
-top.SAT <- get.top(shrink.SAT)
-top.VAT <- get.top(shrink.VAT)
+top.FAT <- lapply(tab.treat, get.top)
 
 
 ### venn diagram
 
-vnc <- euler(list(CAT=top.CAT, RAT=top.RAT, SAT=top.SAT, VAT=top.VAT))
+vnc <- euler(top.FAT)
 p <- plot(vnc, quantities=T, adjust_lables=T, labels=T)
 
 pdf(file.path(path,"/Plots/venn_sig_genes.pdf"), height=10, width=10)
@@ -663,12 +657,11 @@ vnc
 
 ### upset plot
 
-top <- list(CAT=top.CAT, RAT=top.RAT, SAT=top.SAT, VAT=top.VAT)
-upset(fromList(top),
+upset(fromList(top.FAT),
       mainbar.y.label = "Number\nof Genes\n\n", 
       order.by='freq',
       keep.order=T,
-      text.scale=c(2.3, 1.8, 1.8, 2, 1.6, 1.6))
+      text.scale=c(2.3, 1.8, 1.8, 1.7, 1.6, 1.6))
 
 ```
 
@@ -678,20 +671,20 @@ Table of genes unique to tissue type
 ```{r}
 library(openxlsx)
 
-tables <- list(CAT=shrink.CAT,
-               RAT=shrink.RAT,
-               SAT=shrink.SAT,
-               VAT=shrink.VAT)
+tables <- list(CAT=tab.treat$CAT,
+               RAT=tab.treat$RAT,
+               SAT=tab.treat$SAT,
+               VAT=tab.treat$VAT)
 
 grab.unique <- function(fat1, fat2, fat3, fat4){
   fat1[!(fat1 %in% c(fat2, fat3, fat4))]
 }
 
 uni.genes <- list()
-uni.genes$CAT <- grab.unique(top.CAT, top.RAT, top.SAT, top.VAT)
-uni.genes$RAT <- grab.unique(top.RAT, top.CAT, top.SAT, top.VAT)
-uni.genes$SAT <- grab.unique(top.SAT, top.CAT, top.RAT, top.VAT)
-uni.genes$VAT <- grab.unique(top.VAT, top.CAT, top.RAT, top.SAT)
+uni.genes$CAT <- grab.unique(top.FAT$CAT, top.FAT$RAT, top.FAT$SAT, top.FAT$VAT)
+uni.genes$RAT <- grab.unique(top.FAT$RAT, top.FAT$CAT, top.FAT$SAT, top.FAT$VAT)
+uni.genes$SAT <- grab.unique(top.FAT$SAT, top.FAT$CAT, top.FAT$RAT, top.FAT$VAT)
+uni.genes$VAT <- grab.unique(top.FAT$VAT, top.FAT$CAT, top.FAT$RAT, top.FAT$SAT)
 
 #grab results from table
 uni.gene.table <- lapply(names(uni.genes), FUN=function(tissue){
@@ -702,9 +695,13 @@ names(uni.gene.table) <- names(uni.genes)
 
 #format tables
 uni.gene.table <- lapply(uni.gene.table, FUN=function(tab){
-  tab$gene = paste0(' ', rownames(tab))
-  tab = tab[,c(9,1,2,3,5,6,7,8)]
-  tab = tab[order(-abs(tab$log2FoldChange)),]
+  if(nrow(tab)>0){
+    tab$gene = paste0(' ', rownames(tab))
+    tab = tab[,c(8,1,2,3,4,5,6,7)]
+    tab = tab[order(-abs(tab$log2FoldChange)),]
+  }else{
+    'none'
+  }
 })
 
 write.xlsx(uni.gene.table, file=file.path(path, 'Tables/DE genes prenatal T tissue unique.xlsx'))
