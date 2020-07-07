@@ -22,6 +22,7 @@ library(gplots)
 library(knitr)
 
 path <- "F:/Drive/Misc/RNAseq/Sheep_RNAseq/Fat_Depos/"
+tissues <- list(CAT='CAT',RAT='RAT',SAT='SAT',VAT='VAT')
 
 ```
 
@@ -252,8 +253,6 @@ ds.ruv <- DESeqDataSetFromMatrix(countData = counts(ruv), colData = pData(ruv),
 
 ## Tissue difference models
 ```{r tissue mods}
-tissues <- list(CAT='CAT',RAT='RAT',SAT='SAT',VAT='VAT')
-
 #tissue 1 vs all
 tissue_mod <- function(tissue){
   ds.fat = ds.ruv
@@ -589,26 +588,39 @@ Pathway Results from LRpath
 ```{r lrpath}
 library(openxlsx)
 
-path.CAT <- read.xlsx(file.path(path,'Tables/LRpath/CAT_T_treat.xlsx'))
-path.RAT <- read.xlsx(file.path(path,'Tables/LRpath/RAT_T_treat.xlsx'))
-path.SAT <- read.xlsx(file.path(path,'Tables/LRpath/SAT_T_treat.xlsx'))
-path.VAT <- read.xlsx(file.path(path,'Tables/LRpath/VAT_T_treat.xlsx'))
 
+### read in prenatal T LR results
+path.prenatalT <- lapply(tissues, FUN=function(FAT){
+  read.table(paste0(path,'Tables/LRpath/',FAT,'_prenatal_T.txt'), sep='\t', header=T, comment.char='%',quote="")
+})
+
+### read in cell type difference LR results
+path.tissuecon <- lapply(tissues, FUN=function(FAT){
+  read.table(paste0(path,'Tables/LRpath/',FAT,'_celltype_controls.txt'), sep='\t', header=T, comment.char='%',quote="")
+})
+
+
+### formatting tables
 lr.process <- function(tab){
   names(tab) <- c('id','name','type','n_genes','coeff','OR','pvalue','FDR','direction','Genes_p_05')
   tab <- tab[order(tab$'pvalue'),]
   tab
 }
 
-path.CAT <- lr.process(path.CAT)
-path.RAT <- lr.process(path.RAT)
-path.SAT <- lr.process(path.SAT)
-path.VAT <- lr.process(path.VAT)
+path.prenatalT <- lapply(path.prenatalT, lr.process)
+path.tissuecon <- lapply(path.tissuecon, lr.process)
 
-write.csv(path.CAT, file=file.path(path,'Tables/RNA-Enrich CAT T Treat.csv'), row.names=F)
-write.csv(path.RAT, file=file.path(path,'Tables/RNA-Enrich RAT T Treat.csv'), row.names=F)
-write.csv(path.SAT, file=file.path(path,'Tables/RNA-Enrich SAT T Treat.csv'), row.names=F)
-write.csv(path.VAT, file=file.path(path,'Tables/RNA-Enrich VAT T Treat.csv'), row.names=F)
+
+### write formatted tables
+lapply(tissues, FUN=function(FAT){
+  write.csv(path.prenatalT[[FAT]], file=paste0(path,'Tables/RNA-Enrich ',FAT,' T Treat.csv'), row.names=F)
+})
+write.xlsx(path.prenatalT, file=paste0(path,'Tables/RNA-Enrich T Treat.xlsx'))
+
+lapply(tissues, FUN=function(FAT){
+  write.csv(path.tissuecon[[FAT]], file=paste0(path,'Tables/RNA-Enrich ',FAT,' cell type in controls.csv'), row.names=F)
+})
+write.xlsx(path.tissuecon, file=paste0(path,'Tables/RNA-Enrich cell type in controls.xlsx'))
 
 ```
 
@@ -714,13 +726,13 @@ write.xlsx(uni.gene.table, file=file.path(path, 'Tables/DE genes prenatal T tiss
 ## Heatmaps
 ```{r path_heat}
 
-path.CAT <- read.csv(file=file.path(path,'Tables/RNA-Enrich CAT T Treat.csv'), header=T)
-path.RAT <- read.csv(file=file.path(path,'Tables/RNA-Enrich RAT T Treat.csv'), header=T)
-path.SAT <- read.csv(file=file.path(path,'Tables/RNA-Enrich SAT T Treat.csv'), header=T)
-path.VAT <- read.csv(file=file.path(path,'Tables/RNA-Enrich VAT T Treat.csv'), header=T)
+path.prenatalT <- lapply(tissues, FUN=function(FAT){
+  read.csv(file=paste0(path,'Tables/RNA-Enrich ',FAT,' T Treat.csv'), header=T)
+})
+
 
 # FDR < 0.01
-top.paths <- lapply(list(CAT=path.CAT, RAT=path.RAT, SAT=path.SAT, VAT=path.VAT),
+top.paths <- lapply(path.prenatalT,
                     FUN=function(results){
                       results[results$FDR<0.01,]
                     })
@@ -740,12 +752,14 @@ upset(fromList(top.paths.names),
       keep.order=T,
       text.scale=c(2.3, 1.8, 1.8, 1.5, 1.6, 1.6))
 
+
+
 # make matrix of odds ratios for the pathways
 construct_mat <- function(path.set){
-  CAT_paths <- path.CAT[match(path.set,path.CAT$id),]
-  RAT_paths <- path.RAT[match(path.set,path.RAT$id),]
-  SAT_paths <- path.SAT[match(path.set,path.SAT$id),]
-  VAT_paths <- path.VAT[match(path.set,path.VAT$id),]
+  CAT_paths <- path.prenatalT$CAT[match(path.set,path.prenatalT$CAT$id),]
+  RAT_paths <- path.prenatalT$RAT[match(path.set,path.prenatalT$RAT$id),]
+  SAT_paths <- path.prenatalT$SAT[match(path.set,path.prenatalT$SAT$id),]
+  VAT_paths <- path.prenatalT$VAT[match(path.set,path.prenatalT$VAT$id),]
   
   for_clust <- data.frame(CAT=CAT_paths$OR,
                           RAT=RAT_paths$OR,
@@ -814,6 +828,6 @@ OR_excel <- OR_matrix[path_heat$rowInd, path_heat$colInd]
 OR_excel <- cbind(rownames(OR_excel), OR_excel)
 colnames(OR_excel)[1] <- ''
 OR_excel <- OR_excel[rev(rownames(OR_excel)),]
+OR_excel[,2:5] <- round(as.numeric(OR_excel[,2:5]), 3)
 write.xlsx(OR_excel, file=file.path(path,'Tables/Pathway_heatmap_table_values.xlsx'))
-
 ```
