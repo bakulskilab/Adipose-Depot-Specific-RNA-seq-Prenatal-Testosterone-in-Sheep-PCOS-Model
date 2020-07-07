@@ -383,25 +383,6 @@ augment.tab <- function(tab, tissue, test=T){
   tab
 }
 
-shrink.C <- augment.tab(shrink.C, 'CAT', test=F)
-shrink.R <- augment.tab(shrink.R, 'RAT', test=F)
-shrink.S <- augment.tab(shrink.S, 'SAT', test=F)
-shrink.V <- augment.tab(shrink.V, 'VAT', test=F)
-
-shrink.Cc <- augment.tab(shrink.Cc, 'CAT', test=F)
-shrink.Rc <- augment.tab(shrink.Rc, 'RAT', test=F)
-shrink.Sc <- augment.tab(shrink.Sc, 'SAT', test=F)
-shrink.Vc <- augment.tab(shrink.Vc, 'VAT', test=F)
-
-shrink.Ct <- augment.tab(shrink.Ct, 'CAT', test=F)
-shrink.Rt <- augment.tab(shrink.Rt, 'RAT', test=F)
-shrink.St <- augment.tab(shrink.St, 'SAT', test=F)
-shrink.Vt <- augment.tab(shrink.Vt, 'VAT', test=F)
-
-shrink.CAT <- augment.tab(shrink.CAT, 'CAT')
-shrink.RAT <- augment.tab(shrink.RAT, 'RAT')
-shrink.SAT <- augment.tab(shrink.SAT, 'SAT')
-shrink.VAT <- augment.tab(shrink.VAT, 'VAT')
 
 #run to get normalization factors for counts matrix
 ds <- DESeq(ds)
@@ -411,7 +392,7 @@ tab.tissue <- lapply(tissues, FUN=function(tissue){
   res <- shrink.tissue[[tissue]]
   
   tab.C <- augment.tab(res$C, tissue, test=F)
-  tab.T <- augment.tab(res$C, tissue, test=F)
+  tab.T <- augment.tab(res$T, tissue, test=F)
   
   list(C=tab.C, T=tab.T)
 })
@@ -434,11 +415,12 @@ load(file=file.path(path,'Data/res_shrink.RDA'))
 
 ### cell type control
 
-EnhancedVolcano(shrink.Cc, 
+volcano <- function(tab){
+  EnhancedVolcano(tab, 
                 title='',
                 subtitle='',
                 caption='',
-                lab=rownames(shrink.Cc), 
+                lab=rownames(tab), 
                 #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
                 x='log2FoldChange',
                 y='padj',
@@ -453,342 +435,29 @@ EnhancedVolcano(shrink.Cc,
                 transcriptPointSize = 1.8,
                 colAlpha = 1,
                 transcriptLabhjust = 0.2)
+}
 
-EnhancedVolcano(shrink.Rc, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.Rc), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
+### cell type diff in control
+volcano(tab.tissue$CAT$C)
+volcano(tab.tissue$RAT$C)
+volcano(tab.tissue$SAT$C)
+volcano(tab.tissue$VAT$C)
 
-EnhancedVolcano(shrink.Sc, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.Sc), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-EnhancedVolcano(shrink.Vc, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.Vc), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-
-
-
-### cell type t-treat
-
-EnhancedVolcano(shrink.Ct, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.Ct), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-EnhancedVolcano(shrink.Rt, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.Rt), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-EnhancedVolcano(shrink.St, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.St), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-EnhancedVolcano(shrink.Vt, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.Vt), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-EnhancedVolcano(shrink.C, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.C), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-EnhancedVolcano(shrink.R, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.R), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-EnhancedVolcano(shrink.S, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.S), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.2)
-
-EnhancedVolcano(shrink.V, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.V), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.4)
-
+### cell type diff in treat
+volcano(tab.tissue$CAT$T)
+volcano(tab.tissue$RAT$T)
+volcano(tab.tissue$SAT$T)
+volcano(tab.tissue$VAT$T)
 
 
 
 
 ### T-treat
+volcano(tab.treat$CAT)
+volcano(tab.treat$RAT)
+volcano(tab.treat$SAT)
+volcano(tab.treat$VAT)
 
-
-EnhancedVolcano(shrink.CAT, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.CAT), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.4)
-
-EnhancedVolcano(shrink.RAT, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.RAT), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.4)
-
-EnhancedVolcano(shrink.SAT, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.SAT), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.4)
-
-EnhancedVolcano(shrink.VAT, 
-                title='',
-                subtitle='',
-                caption='',
-                lab=rownames(shrink.VAT), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
-                x='log2FoldChange',
-                y='padj',
-                ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
-                #ylim = c(0,40),
-                legendVisible = F,
-                pCutoff=0.05,
-                FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
-                colAlpha = 1,
-                transcriptLabhjust = 0.4)
 
 
 ```
