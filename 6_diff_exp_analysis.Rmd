@@ -468,21 +468,17 @@ Differential Gene Tables
 ```{r}
 library(openxlsx)
 load(file=file.path(path,'Data/res_shrink.RDA'))
-load(file=file.path(path,'Data/res_shrink_cell_treat_stratified.RDA'))
 
 write.gene.tab <- function(tab, filename){
   tab$gene <- paste0(' ',rownames(tab))
-  tab <- tab[,c(9,1:8)]
+  tab <- tab[,c(8,1:7)]
   tab[,2] <- round(tab[,2],2)
   tab[,3] <- round(tab[,3],2)
-  tab[,4] <- round(tab[,4],2)
+  tab[,4] <- round(tab[,4],4)
   tab[,5] <- round(tab[,5],2)
   tab[,6] <- round(tab[,6],2)
-  tab[,7] <- round(tab[,7],2)
+  tab[,7] <- signif(tab[,7],3)
   tab[,8] <- signif(tab[,8],3)
-  tab[,9] <- signif(tab[,9],3)
-  
-  tab <- tab[,c(1,2,3,4,6,7,8,9)]
   
   tablist <- list(Order_Pval=tab, Order_FC=tab[abs(order(tab$log2FoldChange)),])
   
@@ -491,25 +487,20 @@ write.gene.tab <- function(tab, filename){
   invisible(tab)
 }
 
-write.gene.tab(shrink.C, 'DE genes CAT cell type.xlsx')
-write.gene.tab(shrink.R, 'DE genes RAT cell type.xlsx')
-write.gene.tab(shrink.S, 'DE genes SAT cell type.xlsx')
-write.gene.tab(shrink.V, 'DE genes VAT cell type.xlsx')
+CC.cat <- write.gene.tab(tab.tissue$CAT$C, 'DE cell type T stratified/DE genes CAT cell type controls.xlsx')
+CC.rat <- write.gene.tab(tab.tissue$RAT$C, 'DE cell type T stratified/DE genes RAT cell type controls.xlsx')
+CC.sat <- write.gene.tab(tab.tissue$SAT$C, 'DE cell type T stratified/DE genes SAT cell type controls.xlsx')
+CC.vat <- write.gene.tab(tab.tissue$VAT$C, 'DE cell type T stratified/DE genes VAT cell type controls.xlsx')
 
-write.gene.tab(shrink.Cc, 'DE cell type T stratified/DE genes CAT cell type controls.xlsx')
-write.gene.tab(shrink.Rc, 'DE cell type T stratified/DE genes RAT cell type controls.xlsx')
-write.gene.tab(shrink.Sc, 'DE cell type T stratified/DE genes SAT cell type controls.xlsx')
-write.gene.tab(shrink.Vc, 'DE cell type T stratified/DE genes VAT cell type controls.xlsx')
+CT.cat <- write.gene.tab(tab.tissue$CAT$T, 'DE cell type T stratified/DE genes CAT cell type treat.xlsx')
+CT.cat <- write.gene.tab(tab.tissue$RAT$T, 'DE cell type T stratified/DE genes RAT cell type treat.xlsx')
+CT.cat <- write.gene.tab(tab.tissue$SAT$T, 'DE cell type T stratified/DE genes SAT cell type treat.xlsx')
+CT.cat <- write.gene.tab(tab.tissue$VAT$T, 'DE cell type T stratified/DE genes VAT cell type treat.xlsx')
 
-write.gene.tab(shrink.Ct, 'DE cell type T stratified/DE genes CAT cell type treat.xlsx')
-write.gene.tab(shrink.Rt, 'DE cell type T stratified/DE genes RAT cell type treat.xlsx')
-write.gene.tab(shrink.St, 'DE cell type T stratified/DE genes SAT cell type treat.xlsx')
-write.gene.tab(shrink.Vt, 'DE cell type T stratified/DE genes VAT cell type treat.xlsx')
-
-T.cat <- write.gene.tab(shrink.CAT, 'DE genes CAT T Treat.xlsx')
-T.rat <- write.gene.tab(shrink.RAT, 'DE genes RAT T Treat.xlsx')
-T.sat <- write.gene.tab(shrink.SAT, 'DE genes SAT T Treat.xlsx')
-T.vat <- write.gene.tab(shrink.VAT, 'DE genes VAT T Treat.xlsx')
+T.cat <- write.gene.tab(tab.treat$CAT, 'DE genes CAT T Treat.xlsx')
+T.rat <- write.gene.tab(tab.treat$RAT, 'DE genes RAT T Treat.xlsx')
+T.sat <- write.gene.tab(tab.treat$SAT, 'DE genes SAT T Treat.xlsx')
+T.vat <- write.gene.tab(tab.treat$VAT, 'DE genes VAT T Treat.xlsx')
 
 
 
@@ -540,7 +531,11 @@ top.cross$VAT_logFC <- T.vat[match(top.cross$gene, T.vat$gene),'log2FoldChange']
 top.cross$VAT_padj <- T.vat[match(top.cross$gene, T.vat$gene),'padj']
 
 write.xlsx(top.cross, file=file.path(path,'Tables','DE genes cross adipose.xlsx'))
+```
 
+
+
+```{r LR path prep}
 ### RNA Enrich tables
 library(org.Hs.eg.db)
 
@@ -548,7 +543,7 @@ library(org.Hs.eg.db)
 ortho <- read.table(file.path(path,"..","orthologs.txt"),sep="\t", header=T, stringsAsFactors = F)
 
 #get normalized counts
-norm.counts <- counts(ds.ruv, normalized=T)
+norm.counts <- counts(ds, normalized=T)
 identical(meta$id, colnames(norm.counts))
 
 #make tables for LR path
