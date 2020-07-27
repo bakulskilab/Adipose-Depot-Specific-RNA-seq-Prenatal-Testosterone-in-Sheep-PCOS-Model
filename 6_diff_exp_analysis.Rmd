@@ -382,34 +382,47 @@ stats(tab.treat$VAT)
 load(file=file.path(path,'Data/res_shrink.RDA'))
 
 
-volcano <- function(tab){
+volcano <- function(tab, 
+                    select=NULL, 
+                    xlim.left.adj=0, xlim.right.adj=0,
+                    horiz.lab.adj=0,
+                    vert.lab.adj=1.5){
   EnhancedVolcano(tab, 
                 title='',
                 subtitle='',
                 caption='',
                 lab=rownames(tab), 
-                #selectLab=c('LRRN4','BARX1','TF','EPHX2','HOXC9','PITX2','IRX2','HOXA9'),
+                selectLab=select,
                 x='log2FoldChange',
                 y='padj',
                 ylab = bquote(~-Log[10]~adjusted~italic(P)),
-                #xlim = c(-4.5,6.0),
+                xlim=c(min(tab[,'log2FoldChange'], na.rm=TRUE)-xlim.left.adj,
+                       max(tab[,'log2FoldChange'], na.rm=TRUE)+xlim.right.adj),
                 #ylim = c(0,40),
                 legendVisible = F,
                 pCutoff=0.05,
                 FCcutoff=1,
-                transcriptLabSize = 3.5,
-                #drawConnectors = TRUE,
-                transcriptPointSize = 1.8,
+                transcriptLabSize = 5.0,
+                transcriptLabFace = 'italic',
+                drawConnectors = TRUE,
+                transcriptPointSize = 1.6,
                 colAlpha = 1,
-                transcriptLabhjust = 0.2)
+                transcriptLabhjust = horiz.lab.adj,
+                transcriptLabvjust = vert.lab.adj)
 }
 
 
 ### cell type diff in control
-volcano(tab.tissue$CAT$C)
-volcano(tab.tissue$RAT$C)
-volcano(tab.tissue$SAT$C)
-volcano(tab.tissue$VAT$C)
+de.cell.c.cat <- volcano(tab.tissue$CAT$C, select=c('HOXC6','HOXB7','HOXA7','HOXC8','HOXC9','DMRT2','GNAN1','HOXB5','GATA4','MYL7','LOC106991207','AGT','TTN','MYL4','TNNI3'), horiz.lab.adj=0.45)
+de.cell.c.rat <- volcano(tab.tissue$RAT$C, select=c('LHX8','HOXC10','ALX1','ADA','HAND2','LOC105608584','CCN5'), xlim.left.adj=1, horiz.lab.adj=0.40)
+de.cell.c.sat <- volcano(tab.tissue$SAT$C, select=c('TCF21','WT1','IGF1','IRX2','IRX1','PAX1','ALX3','LOC106991591'), horiz.lab.adj=0.45)
+de.cell.c.vat <- volcano(tab.tissue$VAT$C, select=c('EYA1','SHOX2','ISL1','BARX1','GABRB3','NRN1'), horiz.lab.adj=0.3)
+
+ggsave(de.cell.c.cat, file=file.path(path,"Plots/Vol_cell_con_CAT.svg"), width=8, height=5)
+ggsave(de.cell.c.rat, file=file.path(path,"Plots/Vol_cell_con_RAT.svg"), width=8, height=5)
+ggsave(de.cell.c.sat, file=file.path(path,"Plots/Vol_cell_con_SAT.svg"), width=8, height=5)
+ggsave(de.cell.c.vat, file=file.path(path,"Plots/Vol_cell_con_VAT.svg"), width=8, height=5)
+
 
 ### cell type diff in treat
 volcano(tab.tissue$CAT$T)
@@ -419,14 +432,16 @@ volcano(tab.tissue$VAT$T)
 
 
 
-
 ### T-treat
-volcano(tab.treat$CAT)
-volcano(tab.treat$RAT)
-volcano(tab.treat$SAT)
-volcano(tab.treat$VAT)
+de.treat.cat <- volcano(tab.treat$CAT, select=c('SH3RF2','HOXA6','GPATCH8','ANLN'))
+de.treat.rat <- volcano(tab.treat$RAT, select='RHOJ', vert.lab.adj=-0.2)
+de.treat.sat <- volcano(tab.treat$SAT, select=c('ELN','MEDAG','RHOJ','CSMD2'), vert.lab.adj=-0.4)
+de.treat.vat <- volcano(tab.treat$VAT, select=c('RHOJ','TCEAL2','RAD51AP1','GNG8','LOC106990101','ITGB2','EMC4','C2H9orf40'), vert.lab.adj=-0.4)
 
-
+ggsave(de.treat.cat, file=file.path(path,"Plots/Vol_treat_CAT.svg"), width=8, height=5)
+ggsave(de.treat.rat, file=file.path(path,"Plots/Vol_treat_RAT.svg"), width=8, height=5)
+ggsave(de.treat.sat, file=file.path(path,"Plots/Vol_treat_SAT.svg"), width=8, height=5)
+ggsave(de.treat.vat, file=file.path(path,"Plots/Vol_treat_VAT.svg"), width=8, height=5)
 
 ```
 
