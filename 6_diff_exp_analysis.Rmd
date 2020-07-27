@@ -90,7 +90,7 @@ deseq.ds <- DESeqDataSetFromMatrix(countData = counts,
 Table with columns: id, treatment, number reads, number genes
 
 ```{r}
-tab1 <- meta[,c("id", "treat")]
+tab1 <- meta[,c("id", "sheep", "tissue", "treat")]
 
 summ <- read.table(file.path(path,"Data/counts.summary"), header=T)
 
@@ -111,8 +111,14 @@ tab1$genes <- n_genes
 summary(aov(reads~treat,data=tab1))
 summary(aov(genes~treat,data=tab1))
 
+#get ranges
+range(tab1$reads)
+range(tab1$genes)
 
-tab1$id <- gsub('_','-',tab1$id)
+#order table and write
+tab1$id <- gsub('.*_','',tab1$id)
+tab1 <- tab1[order(tab1$tissue, tab1$treat, tab1$sheep),]
+
 write.csv(tab1, file=file.path(path,"Results/descriptives_table.csv"), row.names=F, quote=F)
 ```
 
