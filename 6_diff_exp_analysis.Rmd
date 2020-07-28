@@ -18,6 +18,7 @@ library(gridGraphics)
 library(magrittr)
 library(openxlsx)
 library(gplots)
+library(svglite)
 
 library(knitr)
 
@@ -637,27 +638,18 @@ get.top <- function(tab){
 }
 
 top.FAT <- lapply(tab.treat, get.top)
-
-
-### venn diagram
-
-vnc <- euler(top.FAT)
-p <- plot(vnc, quantities=T, adjust_lables=T, labels=T)
-
-pdf(file.path(path,"/Plots/venn_sig_genes.pdf"), height=10, width=10)
-p
-dev.off()
-
-vnc
-
+names(top.FAT) <- c("ECAT","PRAT","SAT","VAT")
 
 ### upset plot
 
+svg(file.path(path,'Plots/upset_prenatalT.svg'))
 upset(fromList(top.FAT),
       mainbar.y.label = "Number\nof Genes\n\n", 
       order.by='freq',
       keep.order=T,
-      text.scale=c(2.3, 1.8, 1.8, 1.7, 1.6, 1.6))
+      text.scale=c(2.9, 1.8, 1.8, 1.7, 1.6, 2.2))
+dev.off()
+
 
 ```
 
@@ -730,12 +722,14 @@ library(UpSetR)
 top.paths.names <- lapply(top.paths, FUN=function(tab){
   tab$id
 })
+
+svg(file.path(path,'Plots/upset_pathway.svg'))
 upset(fromList(top.paths.names),
       mainbar.y.label = "Number\nof Pathways\n\n", 
       order.by='freq',
       keep.order=T,
-      text.scale=c(2.3, 1.8, 1.8, 1.5, 1.6, 1.6))
-
+      text.scale=c(2.9, 1.8, 1.8, 1.7, 1.6, 2.2))
+dev.off()
 
 
 # make matrix of odds ratios for the pathways
@@ -771,13 +765,24 @@ color.gradient <- colorRampPalette(c('firebrick4','firebrick3','gainsboro','roya
 col.breaks <- c(seq(0,1,length=6),seq(1.2,2.1,length=5))
 #col.breaks <- c(0,0.66,1,1.33,2.33,4)
 
-#svglite(file.path(res,'heatmap_paths.svg'))
+png(file.path(path,'Plots/heatmap_paths.png'), res=300, type='cairo', height=6, width=5, units='in')
 path_heat <- heatmap.2(OR_matrix
+          ,dendrogram = 'none'
           ,trace='none'
           ,density.info='none'
           ,col=color.gradient(10)
-          ,breaks=col.breaks)
+          ,breaks=col.breaks
+          ,lmat=rbind(c(3,4,0),
+                      c(2,1,1))
+          ,lwid=c(0.1,0.5,0.1)
+          ,lhei=c(0.1,0.4)
+          ,labCol=c("ECAT", "PRAT", "SAT", "VAT")
+          ,key.title="Odds Ratio"
+          ,key.xlab="Odds Ratio"
+          ,labRow="")
+dev.off()
 
+svglite(file.path(path,'Plots/heatmap_paths.svg'))
 heatmap.2(OR_matrix
           ,dendrogram='none'
           ,density.info='none'
@@ -796,7 +801,7 @@ heatmap.2(OR_matrix
           ,key.title="OR"
           #,RowSideColors = ifelse(paths %in% common, "gray60", ifelse(paths %in% LRtop.gc$Id, "gray92", "gray2"))
           #,labRow=NA
-          ,labCol=c("CAT", "RAT", "SAT", "VAT")
+          ,labCol=c("ECAT", "PRAT", "SAT", "VAT")
           ,srtCol=0
           #,adjCol=c(0.5,0.8)
           ,sepwidth = c(0,0)
@@ -804,7 +809,7 @@ heatmap.2(OR_matrix
           )
 #par(xpd=TRUE)
 #legend(-0.1,0.5, legend=c("GC","Both","TC"),fill=c("gray92","gray60","gray2"), bty='n')
-#dev.off()
+dev.off()
 
 
 #write excel file of pathways in heatmap
