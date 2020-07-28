@@ -464,11 +464,11 @@ write.gene.tab <- function(tab, filename){
   tab[,7] <- signif(tab[,7],3)
   tab[,8] <- signif(tab[,8],3)
   
-  tablist <- list(Order_Pval=tab, Order_FC=tab[abs(order(tab$log2FoldChange)),])
+  tablist <- list(Order_Pval=tab, Order_FC=tab[order(-abs(tab$log2FoldChange)),])
   
-  write.xlsx(tablist, file.path(path,'Tables',filename), row.names=F)
+  #write.xlsx(tablist, file.path(path,'Tables',filename), row.names=F)
   
-  invisible(tab)
+  invisible(tablist$Order_FC)
 }
 
 CC.cat <- write.gene.tab(tab.tissue$CAT$C, 'DE cell type T stratified/DE genes CAT cell type controls.xlsx')
@@ -476,16 +476,23 @@ CC.rat <- write.gene.tab(tab.tissue$RAT$C, 'DE cell type T stratified/DE genes R
 CC.sat <- write.gene.tab(tab.tissue$SAT$C, 'DE cell type T stratified/DE genes SAT cell type controls.xlsx')
 CC.vat <- write.gene.tab(tab.tissue$VAT$C, 'DE cell type T stratified/DE genes VAT cell type controls.xlsx')
 
+write.xlsx(list(ECAT=CC.cat, PRAT=CC.rat, SAT=CC.sat, VAT=CC.vat), file=file.path(path,'Tables/DE genes cell type controls.xlsx'))
+
+
 CT.cat <- write.gene.tab(tab.tissue$CAT$T, 'DE cell type T stratified/DE genes CAT cell type treat.xlsx')
-CT.cat <- write.gene.tab(tab.tissue$RAT$T, 'DE cell type T stratified/DE genes RAT cell type treat.xlsx')
-CT.cat <- write.gene.tab(tab.tissue$SAT$T, 'DE cell type T stratified/DE genes SAT cell type treat.xlsx')
-CT.cat <- write.gene.tab(tab.tissue$VAT$T, 'DE cell type T stratified/DE genes VAT cell type treat.xlsx')
+CT.rat <- write.gene.tab(tab.tissue$RAT$T, 'DE cell type T stratified/DE genes RAT cell type treat.xlsx')
+CT.sat <- write.gene.tab(tab.tissue$SAT$T, 'DE cell type T stratified/DE genes SAT cell type treat.xlsx')
+CT.vat <- write.gene.tab(tab.tissue$VAT$T, 'DE cell type T stratified/DE genes VAT cell type treat.xlsx')
+
+write.xlsx(list(ECAT=CT.cat, PRAT=CT.rat, SAT=CT.sat, VAT=CT.vat), file=file.path(path,'Tables/DE genes cell type T treat.xlsx'))
+
 
 T.cat <- write.gene.tab(tab.treat$CAT, 'DE genes CAT T Treat.xlsx')
 T.rat <- write.gene.tab(tab.treat$RAT, 'DE genes RAT T Treat.xlsx')
 T.sat <- write.gene.tab(tab.treat$SAT, 'DE genes SAT T Treat.xlsx')
 T.vat <- write.gene.tab(tab.treat$VAT, 'DE genes VAT T Treat.xlsx')
 
+write.xlsx(list(ECAT=T.cat, PRAT=T.rat, SAT=T.sat, VAT=T.vat), file=file.path(path,'Tables/DE genes prenatal T treat.xlsx'))
 
 
 ### common across tissues
