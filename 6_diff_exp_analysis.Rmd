@@ -512,13 +512,13 @@ top.cross$sum <- top.cross$cat + top.cross$rat + top.cross$sat + top.cross$vat
 #only pick the ones signif in more than one tissue
 top.cross <- top.cross[top.cross$sum>1,]
 top.cross$gene <- paste0(" ",top.cross$gene)
-top.cross$CAT_logFC <- T.cat[match(top.cross$gene, T.cat$gene),'log2FoldChange']
+top.cross$CAT_FC <- T.cat[match(top.cross$gene, T.cat$gene),'FC']
 top.cross$CAT_padj <- T.cat[match(top.cross$gene, T.cat$gene),'padj']
-top.cross$RAT_logFC <- T.rat[match(top.cross$gene, T.rat$gene),'log2FoldChange']
+top.cross$RAT_FC <- T.rat[match(top.cross$gene, T.rat$gene),'FC']
 top.cross$RAT_padj <- T.rat[match(top.cross$gene, T.rat$gene),'padj']
-top.cross$SAT_logFC <- T.sat[match(top.cross$gene, T.sat$gene),'log2FoldChange']
+top.cross$SAT_FC <- T.sat[match(top.cross$gene, T.sat$gene),'FC']
 top.cross$SAT_padj <- T.sat[match(top.cross$gene, T.sat$gene),'padj']
-top.cross$VAT_logFC <- T.vat[match(top.cross$gene, T.vat$gene),'log2FoldChange']
+top.cross$VAT_FC <- T.vat[match(top.cross$gene, T.vat$gene),'FC']
 top.cross$VAT_padj <- T.vat[match(top.cross$gene, T.vat$gene),'padj']
 
 write.xlsx(top.cross, file=file.path(path,'Tables','DE genes cross adipose.xlsx'))
