@@ -681,12 +681,21 @@ uni.genes$RAT <- grab.unique(top.FAT$RAT, top.FAT$CAT, top.FAT$SAT, top.FAT$VAT)
 uni.genes$SAT <- grab.unique(top.FAT$SAT, top.FAT$CAT, top.FAT$RAT, top.FAT$VAT)
 uni.genes$VAT <- grab.unique(top.FAT$VAT, top.FAT$CAT, top.FAT$RAT, top.FAT$SAT)
 
+top.genes <- list(CAT=top.FAT$CAT, RAT=top.FAT$RAT, SAT=top.FAT$SAT, VAT=top.FAT$VAT)
+
 #grab results from table
 uni.gene.table <- lapply(names(uni.genes), FUN=function(tissue){
   tab <- tables[[tissue]]
   tab[uni.genes[[tissue]],]
 })
 names(uni.gene.table) <- names(uni.genes)
+
+top.gene.table <- lapply(names(top.genes), FUN=function(tissue){
+  tab <- tables[[tissue]]
+  tab[top.genes[[tissue]],]
+})
+names(top.gene.table) <- names(top.genes)
+
 
 #format tables
 uni.gene.table <- lapply(uni.gene.table, FUN=function(tab){
@@ -699,7 +708,20 @@ uni.gene.table <- lapply(uni.gene.table, FUN=function(tab){
   }
 })
 
+top.gene.table <- lapply(top.gene.table, FUN=function(tab){
+  if(nrow(tab)>0){
+    tab$gene = paste0(' ', rownames(tab))
+    tab = tab[,c(8,1,2,3,4,5,6,7)]
+    tab = tab[order(-abs(tab$log2FoldChange)),]
+  }else{
+    'none'
+  }
+})
+
+
 write.xlsx(uni.gene.table, file=file.path(path, 'Tables/DE genes prenatal T tissue unique.xlsx'))
+write.xlsx(top.gene.table, file=file.path(path, 'Tables/DE genes prenatal T tissue top genes.xlsx'))
+
 ```
 
 
