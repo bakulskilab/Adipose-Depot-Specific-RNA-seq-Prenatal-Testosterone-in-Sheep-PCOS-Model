@@ -60,10 +60,54 @@ counts <- counts[,match(meta$id, colnames(counts))]
 table(meta$tissue, meta$sheep)
 table(meta$tissue, meta$treat)
 
-#type in demuxstats.txt file, Sample_126166 should be sheep 233
+#typo in demuxstats.txt file, Sample_126166 should be sheep 233
 meta[meta$id=='Sample_126166','sheep'] <- 233
 
 save(gene_info, counts, meta, file=file.path(path,'Data/count_data.RDA'))
+```
+
+## Processing for GEO upload
+```{r}
+library(tools)
+server.path <- "/nfs/turbo/bakulski1/Datasets/Padmanabhan/ruddle.brcf.med.umich.edu/ruddle.brcf.med.umich.edu/ruddle.brcf.med.umich.edu/Run_2878/"
+
+#load meta data
+meta <- read.table(file.path(server.path,"Run_2878_padmanabha_DemuxStats.txt"),header=T)
+meta$id <- paste0('Sample_',meta$SampleID)
+
+#treatment factors formating
+meta$Description <- as.character(meta$Description)
+meta$tissue <- substring(meta$Description,1,3)
+meta$sheep <- gsub('[A-Z]','',meta$Description)
+meta$treat <- sapply(meta$Description, FUN=function(x) substring(x, nchar(x)))
+meta <- meta[,c('id','tissue','sheep','treat')]
+meta$group <- paste0(meta$tissue, meta$treat)
+meta$sheep <- ifelse(meta$sheep=='98', '098', meta$sheep)
+meta[meta$id=='Sample_126166','sheep'] <- 233
+
+#get list of fastq files
+raw.files <- list.files(file.path(server.path,"padmanabha"), recursive=T)
+
+#sample table
+samples <- data.frame(sample_name = meta$id,
+                      title = meta$group,
+                      source = meta$tissue,
+                      orgamism = 'sheep',
+                      treatment = meta$treat,
+                      molecule = 'total RNA',
+                      raw_file = gsub('Sample_.*/','',raw.files))
+
+#raw file table
+md5 <- md5sum(file.path(server.path,"padmanabha",raw.files))
+names(md5) <- gsub('Sample_.*/','',raw.files)
+raw <- data.frame(file_name = gsub('Sample_.*/','',raw.files),
+                  checksum = md5,
+                  instrument = 'Illumina HiSeq 4000',
+                  single = 'single')
+
+
+write.csv(samples, file='/nfs/turbo/bakulski1/People/johndou/GEO_temp_transfer/samples_tab.csv', row.names=F, quote=F)
+write.csv(raw, file='/nfs/turbo/bakulski1/People/johndou/GEO_temp_transfer/raw_tab.csv', row.names=F, quote=F)
 ```
 
 
@@ -525,98 +569,6 @@ write.xlsx(top.cross, file=file.path(path,'Tables','DE genes cross adipose.xlsx'
 ```
 
 
-
-```{r LR path prep}
-### RNA Enrich tables
-library(org.Hs.eg.db)
-
-#load human ortholog table
-ortho <- read.table(file.path(path,"..","orthologs.txt"),sep="\t", header=T, stringsAsFactors = F)
-
-#get normalized counts
-norm.counts <- counts(ds, normalized=T)
-identical(meta$id, colnames(norm.counts))
-
-#make tables for LR path
-#tab = table from DESeq2 results
-#cut = what group(s) to include in average counts
-#file = desired name of file
-LRprep <- function(tab, cut=c('CATC','CATT','RATC','RATT','SATC','SATT','VATC','VATT'), file){
-  cut.counts <- norm.counts[,meta$group %in% cut]
-  tab.count <- cut.counts[match(rownames(tab),rownames(cut.counts)),]
-  tab.ortho <- ortho[match(rownames(tab),ortho$Sheep.gene.name),"Gene.name"]
-  tab.ortho <- unlist(mapIds(org.Hs.eg.db, tab.ortho, "ENTREZID", "SYMBOL"))
-  
-  LR <- data.frame(geneid=tab.ortho[match(rownames(tab),names(tab.ortho))],
-                   PValue=tab$pvalue,
-                   logFC=tab$log2FoldChange,
-                   norm_avg_readcount=rowMeans(tab.count))
-  LR <- LR[!is.na(LR$geneid),]
-  
-  write.table(LR, sep="\t", row.names=FALSE, quote=FALSE, file=file.path(path,"Tables/LRpath/",file))
-  
-  invisible(LR)
-}
-
-LR.CC <- LRprep(tab.tissue$CAT$C, file='CAT_con_cell_type_LR.txt')
-LR.RC <- LRprep(tab.tissue$RAT$C, file='RAT_con_cell_type_LR.txt')
-LR.SC <- LRprep(tab.tissue$SAT$C, file='SAT_con_cell_type_LR.txt')
-LR.VC <- LRprep(tab.tissue$VAT$C, file='VAT_con_cell_type_LR.txt')
-
-LR.CT <- LRprep(tab.tissue$CAT$T, file='CAT_trt_cell_type_LR.txt')
-LR.RT <- LRprep(tab.tissue$RAT$T, file='RAT_trt_cell_type_LR.txt')
-LR.ST <- LRprep(tab.tissue$SAT$T, file='SAT_trt_cell_type_LR.txt')
-LR.VT <- LRprep(tab.tissue$VAT$T, file='VAT_trt_cell_type_LR.txt')
-
-LR.CAT <- LRprep(tab.treat$CAT, file='CAT_T_treat_LR.txt')
-LR.RAT <- LRprep(tab.treat$RAT, file='RAT_T_treat_LR.txt')
-LR.SAT <- LRprep(tab.treat$SAT, file='SAT_T_treat_LR.txt')
-LR.VAT <- LRprep(tab.treat$VAT, file='VAT_T_treat_LR.txt')
-
-```
-
-
-Pathway Results from LRpath
-```{r lrpath}
-library(openxlsx)
-
-
-### read in prenatal T LR results
-path.prenatalT <- lapply(tissues, FUN=function(FAT){
-  read.table(paste0(path,'Tables/LRpath/',FAT,'_prenatal_T.txt'), sep='\t', header=T, comment.char='%',quote="")
-})
-
-### read in cell type difference LR results
-path.tissuecon <- lapply(tissues, FUN=function(FAT){
-  read.table(paste0(path,'Tables/LRpath/',FAT,'_celltype_controls.txt'), sep='\t', header=T, comment.char='%',quote="")
-})
-
-
-### formatting tables
-lr.process <- function(tab){
-  names(tab) <- c('id','name','type','n_genes','coeff','OR','pvalue','FDR','direction','Genes_p_05')
-  tab <- tab[order(tab$'pvalue'),]
-  tab
-}
-
-path.prenatalT <- lapply(path.prenatalT, lr.process)
-path.tissuecon <- lapply(path.tissuecon, lr.process)
-
-
-### write formatted tables
-lapply(tissues, FUN=function(FAT){
-  write.csv(path.prenatalT[[FAT]], file=paste0(path,'Tables/RNA-Enrich ',FAT,' T Treat.csv'), row.names=F)
-})
-write.xlsx(path.prenatalT, file=paste0(path,'Tables/RNA-Enrich T Treat.xlsx'))
-
-lapply(tissues, FUN=function(FAT){
-  write.csv(path.tissuecon[[FAT]], file=paste0(path,'Tables/RNA-Enrich ',FAT,' cell type in controls.csv'), row.names=F)
-})
-write.xlsx(path.tissuecon, file=paste0(path,'Tables/RNA-Enrich cell type in controls.xlsx'))
-
-```
-
-
 # Cross Compare DE Genes
 
 ## Cell type stratified
@@ -725,6 +677,97 @@ write.xlsx(top.gene.table, file=file.path(path, 'Tables/DE genes prenatal T tiss
 ```
 
 
+# LR path
+
+```{r LR path prep}
+### RNA Enrich tables
+library(org.Hs.eg.db)
+
+#load human ortholog table
+ortho <- read.table(file.path(path,"..","orthologs.txt"),sep="\t", header=T, stringsAsFactors = F)
+
+#get normalized counts
+norm.counts <- counts(ds, normalized=T)
+identical(meta$id, colnames(norm.counts))
+
+#make tables for LR path
+#tab = table from DESeq2 results
+#cut = what group(s) to include in average counts
+#file = desired name of file
+LRprep <- function(tab, cut=c('CATC','CATT','RATC','RATT','SATC','SATT','VATC','VATT'), file){
+  cut.counts <- norm.counts[,meta$group %in% cut]
+  tab.count <- cut.counts[match(rownames(tab),rownames(cut.counts)),]
+  tab.ortho <- ortho[match(rownames(tab),ortho$Sheep.gene.name),"Gene.name"]
+  tab.ortho <- unlist(mapIds(org.Hs.eg.db, tab.ortho, "ENTREZID", "SYMBOL"))
+  
+  LR <- data.frame(geneid=tab.ortho[match(rownames(tab),names(tab.ortho))],
+                   PValue=tab$pvalue,
+                   logFC=tab$log2FoldChange,
+                   norm_avg_readcount=rowMeans(tab.count))
+  LR <- LR[!is.na(LR$geneid),]
+  
+  write.table(LR, sep="\t", row.names=FALSE, quote=FALSE, file=file.path(path,"Tables/LRpath/",file))
+  
+  invisible(LR)
+}
+
+LR.CC <- LRprep(tab.tissue$CAT$C, file='CAT_con_cell_type_LR.txt')
+LR.RC <- LRprep(tab.tissue$RAT$C, file='RAT_con_cell_type_LR.txt')
+LR.SC <- LRprep(tab.tissue$SAT$C, file='SAT_con_cell_type_LR.txt')
+LR.VC <- LRprep(tab.tissue$VAT$C, file='VAT_con_cell_type_LR.txt')
+
+LR.CT <- LRprep(tab.tissue$CAT$T, file='CAT_trt_cell_type_LR.txt')
+LR.RT <- LRprep(tab.tissue$RAT$T, file='RAT_trt_cell_type_LR.txt')
+LR.ST <- LRprep(tab.tissue$SAT$T, file='SAT_trt_cell_type_LR.txt')
+LR.VT <- LRprep(tab.tissue$VAT$T, file='VAT_trt_cell_type_LR.txt')
+
+LR.CAT <- LRprep(tab.treat$CAT, file='CAT_T_treat_LR.txt')
+LR.RAT <- LRprep(tab.treat$RAT, file='RAT_T_treat_LR.txt')
+LR.SAT <- LRprep(tab.treat$SAT, file='SAT_T_treat_LR.txt')
+LR.VAT <- LRprep(tab.treat$VAT, file='VAT_T_treat_LR.txt')
+
+```
+
+
+Pathway Results from LRpath
+```{r lrpath}
+library(openxlsx)
+
+
+### read in prenatal T LR results
+path.prenatalT <- lapply(tissues, FUN=function(FAT){
+  read.table(paste0(path,'Tables/LRpath/',FAT,'_prenatal_T.txt'), sep='\t', header=T, comment.char='%',quote="")
+})
+
+### read in cell type difference LR results
+path.tissuecon <- lapply(tissues, FUN=function(FAT){
+  read.table(paste0(path,'Tables/LRpath/',FAT,'_celltype_controls.txt'), sep='\t', header=T, comment.char='%',quote="")
+})
+
+
+### formatting tables
+lr.process <- function(tab){
+  names(tab) <- c('id','name','type','n_genes','coeff','OR','pvalue','FDR','direction','Genes_p_05')
+  tab <- tab[order(tab$'FDR'),]
+  tab
+}
+
+path.prenatalT <- lapply(path.prenatalT, lr.process)
+path.tissuecon <- lapply(path.tissuecon, lr.process)
+
+
+### write formatted tables
+lapply(tissues, FUN=function(FAT){
+  write.csv(path.prenatalT[[FAT]], file=paste0(path,'Tables/RNA-Enrich ',FAT,' T Treat.csv'), row.names=F)
+})
+write.xlsx(path.prenatalT, file=paste0(path,'Tables/RNA-Enrich T Treat.xlsx'))
+
+lapply(tissues, FUN=function(FAT){
+  write.csv(path.tissuecon[[FAT]], file=paste0(path,'Tables/RNA-Enrich ',FAT,' cell type in controls.csv'), row.names=F)
+})
+write.xlsx(path.tissuecon, file=paste0(path,'Tables/RNA-Enrich cell type in controls.xlsx'))
+
+```
 
 # Pathway Compare
 
@@ -848,4 +891,204 @@ colnames(OR_excel)[1] <- ''
 OR_excel <- OR_excel[rev(rownames(OR_excel)),]
 OR_excel[,2:5] <- round(as.numeric(OR_excel[,2:5]), 3)
 write.xlsx(OR_excel, file=file.path(path,'Tables/Pathway_heatmap_table_values.xlsx'))
+```
+
+
+# Network Diagrams
+
+```{r network}
+library(STRINGdb)
+library(org.Hs.eg.db)
+library(annotate)
+
+ortho <- read.table(file.path(path,"..","orthologs.txt"),sep="\t", header=T, stringsAsFactors = F)
+
+string_db <- STRINGdb$new(species=9606)
+
+#load RNA enrich pathways
+path.prenatalT <- lapply(tissues, FUN=function(FAT){
+  read.table(paste0(path,'Tables/LRpath/',FAT,'_prenatal_T.txt'), sep='\t', header=T, comment.char='%',quote="")
+})
+
+path.tissuecon <- lapply(tissues, FUN=function(FAT){
+  read.table(paste0(path,'Tables/LRpath/',FAT,'_celltype_controls.txt'), sep='\t', header=T, comment.char='%',quote="")
+})
+
+load(file=file.path(path,'Data/res_shrink.RDA'))
+
+### RAT Chromatin related
+chrm.rat <- path.prenatalT$RAT[path.prenatalT$RAT$Name %in% c("intracellular ribonucleoprotein complex", "ribonucleoprotein complex", "nucleolus", "ribosome biogenesis", "ribonucleoprotein complex biogenesis", "rRNA metabolic process", "posttranscriptional regulation of gene expression"),]
+chrm.rat <- paste(chrm.rat$SigGenes, collapse=', ')
+chrm.rat <- unlist(strsplit(chrm.rat, ', '))
+chrm.rat <- trimws(unique(chrm.rat))
+chrm.rat.m <- getSYMBOL(chrm.rat, data='org.Hs.eg.db')
+
+chrm.rat.df <- data.frame(gene=chrm.rat.m)
+chrm.rat_map <- string_db$map(chrm.rat.df,"gene")
+chrm.rat_map <- chrm.rat_map[!is.na(chrm.rat_map$STRING_id),]
+chrm.rat_hits <- chrm.rat_map$"STRING_id"
+payload_chrm.rat <- string_db$post_payload(chrm.rat_hits, ifelse(tab.treat$RAT[chrm.rat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb RAT chromatin genes.pdf'))
+  string_db$plot_network(chrm.rat_hits, add_link=TRUE, required_score=600, payload_id = payload_chrm.rat)
+dev.off()
+
+### RAT ECM/cytoskeletal genes
+emc.rat <- path.prenatalT$RAT[path.prenatalT$RAT$Name %in% c("proteinaceous extracellular matrix","anchoring junction","adherens junction","myosin complex","actin cytoskeleton","contractile fiber part","contractile fiber","myosin II complex","focal adhesion","myofibril","cell-substrate adherens junction","cell-substrate junction"),]
+emc.rat <- paste(emc.rat$SigGenes, collapse=', ')
+emc.rat <- unlist(strsplit(emc.rat, ', '))
+emc.rat <- trimws(unique(emc.rat))
+emc.rat.m <- getSYMBOL(emc.rat, data='org.Hs.eg.db')
+
+emc.rat.df <- data.frame(gene=emc.rat.m)
+emc.rat_map <- string_db$map(emc.rat.df,"gene")
+emc.rat_map <- emc.rat_map[!is.na(emc.rat_map$STRING_id),]
+emc.rat_hits <- emc.rat_map$"STRING_id"
+payload_emc.rat <- string_db$post_payload(emc.rat_hits, ifelse(tab.treat$RAT[emc.rat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb RAT ECMcytoskeletal genes.pdf'))
+  string_db$plot_network(emc.rat_hits, add_link=TRUE, required_score=600, payload_id = payload_emc.rat)
+dev.off()
+
+
+### CAT ER/Golgi genes
+erg.cat <- path.prenatalT$CAT[path.prenatalT$CAT$Name %in% c("ER to Golgi transport vesicle","ER to Golgi transport vesicle membrane","endoplasmic reticulum lumen","oligosaccharyl transferase activity","oligosaccharyltransferase complex","integral component of endoplasmic reticulum membrane","intrinsic component of endoplasmic reticulum membrane","dolichyl-diphosphooligosaccharide-protein glycotransferase activity","Golgi membrane","Protein export","signal peptide processing","endoplasmic reticulum chaperone complex","phagocytic vesicle membrane","vesicle targeting, rough ER to cis-Golgi","COPII vesicle coating","vesicle coating","ER to Golgi vesicle-mediated transport","protein maturation","chaperone-mediated protein folding","vesicle targeting, to, from or within Golgi","endoplasmic reticulum-Golgi intermediate compartment membrane","endoplasmic reticulum-Golgi intermediate compartment"),]
+erg.cat <- paste(erg.cat$SigGenes, collapse=', ')
+erg.cat <- unlist(strsplit(erg.cat, ', '))
+erg.cat <- trimws(unique(erg.cat))
+erg.cat.m <- getSYMBOL(erg.cat, data='org.Hs.eg.db')
+
+erg.cat.df <- data.frame(gene=erg.cat.m)
+erg.cat_map <- string_db$map(erg.cat.df,"gene")
+erg.cat_map <- erg.cat_map[!is.na(erg.cat_map$STRING_id),]
+erg.cat_hits <- erg.cat_map$"STRING_id"
+payload_erg.cat <- string_db$post_payload(erg.cat_hits, ifelse(tab.treat$CAT[erg.cat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb CAT ER Golgi genes.pdf'))
+  string_db$plot_network(erg.cat_hits, add_link=TRUE, required_score=600, payload_id = payload_erg.cat)
+dev.off()
+
+
+### CAT Immune genes
+imm.cat <- path.prenatalT$CAT[path.prenatalT$CAT$Name %in% c("antigen processing and presentation of peptide antigen via MHC class I","inflammatory response","antigen processing and presentation of peptide antigen","immune effector process"),]
+imm.cat <- paste(imm.cat$SigGenes, collapse=', ')
+imm.cat <- unlist(strsplit(imm.cat, ', '))
+imm.cat <- trimws(unique(imm.cat))
+imm.cat.m <- getSYMBOL(imm.cat, data='org.Hs.eg.db')
+
+imm.cat.df <- data.frame(gene=imm.cat.m)
+imm.cat_map <- string_db$map(imm.cat.df,"gene")
+imm.cat_map <- imm.cat_map[!is.na(imm.cat_map$STRING_id),]
+imm.cat_hits <- imm.cat_map$"STRING_id"
+payload_imm.cat <- string_db$post_payload(imm.cat_hits, ifelse(tab.treat$CAT[imm.cat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb CAT Immune genes.pdf'))
+  string_db$plot_network(imm.cat_hits, add_link=TRUE, required_score=600, payload_id = payload_imm.cat)
+dev.off()
+
+
+### SAT Chromatin related
+chrm.sat <- path.prenatalT$SAT[path.prenatalT$SAT$Name %in% c("histone deacetylase complex","lysine-acetylated histone binding","DNA-methyltransferase activity","nuclear speck","spliceosomal complex","RNA splicing","chromatin modification"),]
+chrm.sat <- paste(chrm.sat$SigGenes, collapse=', ')
+chrm.sat <- unlist(strsplit(chrm.sat, ', '))
+chrm.sat <- trimws(unique(chrm.sat))
+chrm.sat.m <- getSYMBOL(chrm.sat, data='org.Hs.eg.db')
+
+chrm.sat.df <- data.frame(gene=chrm.sat.m)
+chrm.sat_map <- string_db$map(chrm.sat.df,"gene")
+chrm.sat_map <- chrm.sat_map[!is.na(chrm.sat_map$STRING_id),]
+chrm.sat_hits <- chrm.sat_map$"STRING_id"
+payload_chrm.sat <- string_db$post_payload(chrm.sat_hits, ifelse(tab.treat$SAT[chrm.sat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb SAT chromatin genes.pdf'))
+  string_db$plot_network(chrm.sat_hits, add_link=TRUE, required_score=600, payload_id = payload_chrm.sat)
+dev.off()
+
+
+### SAT Cytoskeleton related
+skt.sat <- path.prenatalT$SAT[path.prenatalT$SAT$Name %in% c("cilium assembly","cilium organization","microtubule organizing center part","calmodulin binding","positive regulation of GTPase activity","regulation of GTPase activity"),]
+skt.sat <- paste(skt.sat$SigGenes, collapse=', ')
+skt.sat <- unlist(strsplit(skt.sat, ', '))
+skt.sat <- trimws(unique(skt.sat))
+skt.sat.m <- getSYMBOL(skt.sat, data='org.Hs.eg.db')
+
+skt.sat.df <- data.frame(gene=skt.sat.m)
+skt.sat_map <- string_db$map(skt.sat.df,"gene")
+skt.sat_map <- skt.sat_map[!is.na(skt.sat_map$STRING_id),]
+skt.sat_hits <- skt.sat_map$"STRING_id"
+payload_skt.sat <- string_db$post_payload(skt.sat_hits, ifelse(tab.treat$SAT[skt.sat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb SAT Cytoskeleton genes.pdf'))
+  string_db$plot_network(skt.sat_hits, add_link=TRUE, required_score=600, payload_id = payload_skt.sat)
+dev.off()
+
+
+### VAT Chromatin related
+chrm.vat <- path.prenatalT$VAT[path.prenatalT$VAT$Name %in% c("chromatin modification", "histone modification", "chromatin", "histone methylation", "regulation of gene expression by genetic imprinting", "nuclear matrix", "integral component of organelle membrane", "nuclear chromatin", "histone lysine methylation", "genetic imprinting", "peptidyl-lysine methylation", "nuclear chromosome", "double-stranded DNA binding", "nuclear chromosome part", "macromolecule methylation", "regulation of translational elongation", "chromatin assembly or disassembly", "chromatin remodeling", "lysine-acetylated histone binding", "protein methylation", "histone deacetylation", "regulation of chromatin organization", "histone deacetylase complex", "sequence-specific double-stranded DNA binding", "transcriptional repressor complex", "DNA modification"),]
+#, "histone deubiquitination", "DNA repair", "methylation", "DNA packaging", "RNA polymerase II transcription factor activity, sequence-specific DNA binding", "heterochromatin", "histone-lysine N-methyltransferase activity", "chromatin silencing", "internal peptidyl-lysine acetylation", "histone H3-K9 methylation", "nucleoside transmembrane transport", "peptidyl-lysine acetylation", "nucleosome organization", "regulation of histone methylation", "enhancer sequence-specific DNA binding", "transcription factor activity, protein binding", "DNA-methyltransferase activity", "mRNA metabolic process", "queuine tRNA-ribosyltransferase activity", "protein-lysine N-methyltransferase activity"
+chrm.vat <- paste(chrm.vat$SigGenes, collapse=', ')
+chrm.vat <- unlist(strsplit(chrm.vat, ', '))
+chrm.vat <- trimws(unique(chrm.vat))
+chrm.vat.m <- getSYMBOL(chrm.vat, data='org.Hs.eg.db')
+
+chrm.vat.df <- data.frame(gene=chrm.vat.m)
+chrm.vat_map <- string_db$map(chrm.vat.df,"gene")
+chrm.vat_map <- chrm.vat_map[!is.na(chrm.vat_map$STRING_id),]
+chrm.vat_hits <- chrm.vat_map$"STRING_id"
+payload_chrm.vat <- string_db$post_payload(chrm.vat_hits, ifelse(tab.treat$VAT[chrm.vat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb VAT chromatin genes.pdf'))
+  string_db$plot_network(chrm.vat_hits, add_link=TRUE, required_score=600, payload_id = payload_chrm.vat)
+dev.off()
+
+
+### VAT ER/Golgi related
+erg.vat <- path.prenatalT$VAT[path.prenatalT$VAT$Name %in% c("integral component of endoplasmic reticulum membrane","intrinsic component of endoplasmic reticulum membrane","ER membrane protein complex","Golgi membrane","endosome membrane","intrinsic component of Golgi membrane","integral component of Golgi membrane","organellar ribosome","vesicle targeting, to, from or within Golgi","trans-Golgi network transport vesicle membrane"),]
+erg.vat <- paste(erg.vat$SigGenes, collapse=', ')
+erg.vat <- unlist(strsplit(erg.vat, ', '))
+erg.vat <- trimws(unique(erg.vat))
+erg.vat.m <- getSYMBOL(erg.vat, data='org.Hs.eg.db')
+
+erg.vat.df <- data.frame(gene=erg.vat.m)
+erg.vat_map <- string_db$map(erg.vat.df,"gene")
+erg.vat_map <- erg.vat_map[!is.na(erg.vat_map$STRING_id),]
+erg.vat_hits <- erg.vat_map$"STRING_id"
+payload_erg.vat <- string_db$post_payload(erg.vat_hits, ifelse(tab.treat$VAT[erg.vat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb VAT ER Golgi genes.pdf'))
+  string_db$plot_network(erg.vat_hits, add_link=TRUE, required_score=600, payload_id = payload_erg.vat)
+dev.off()
+
+
+### VAT Immune related
+imm.vat <- path.prenatalT$VAT[path.prenatalT$VAT$Name %in% c("antigen processing and presentation of exogenous peptide antigen", "antigen processing and presentation of exogenous peptide antigen via MHC class I", "antigen processing and presentation of peptide antigen via MHC class I", "antigen processing and presentation of peptide antigen", "antigen processing and presentation of exogenous peptide antigen via MHC class I, TAP-dependent","Fc receptor signaling pathway","immune response-regulating signaling pathway"),]
+imm.vat <- paste(imm.vat$SigGenes, collapse=', ')
+imm.vat <- unlist(strsplit(imm.vat, ', '))
+imm.vat <- trimws(unique(imm.vat))
+imm.vat.m <- getSYMBOL(imm.vat, data='org.Hs.eg.db')
+
+imm.vat.df <- data.frame(gene=imm.vat.m)
+imm.vat_map <- string_db$map(imm.vat.df,"gene")
+imm.vat_map <- imm.vat_map[!is.na(imm.vat_map$STRING_id),]
+imm.vat_hits <- imm.vat_map$"STRING_id"
+payload_imm.vat <- string_db$post_payload(imm.vat_hits, ifelse(tab.treat$VAT[imm.vat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb VAT Immune genes.pdf'))
+  string_db$plot_network(imm.vat_hits, add_link=TRUE, required_score=600, payload_id = payload_imm.vat)
+dev.off()
+
+
+### VAT mitochondrial
+mito.vat <- path.prenatalT$VAT[path.prenatalT$VAT$Name %in% c("mitochondrial matrix","organelle inner membrane","mitochondrial inner membrane","mitochondrial membrane","mitochondrial envelope","intrinsic component of organelle membrane","centriole","mitochondrion organization","mitochondrial translational elongation","mitochondrial translation","mitochondrial translational elongation","mitochondrial translation"),]
+mito.vat <- paste(mito.vat$SigGenes, collapse=', ')
+mito.vat <- unlist(strsplit(mito.vat, ', '))
+mito.vat <- trimws(unique(mito.vat))
+mito.vat.m <- getSYMBOL(mito.vat, data='org.Hs.eg.db')
+
+mito.vat.df <- data.frame(gene=mito.vat.m)
+mito.vat_map <- string_db$map(mito.vat.df,"gene")
+mito.vat_map <- mito.vat_map[!is.na(mito.vat_map$STRING_id),]
+mito.vat_hits <- mito.vat_map$"STRING_id"
+payload_mito.vat <- string_db$post_payload(mito.vat_hits, ifelse(tab.treat$VAT[mito.vat_map$gene,'log2FoldChange']>0, "#0392ff", "#ff1100"))
+pdf(file.path(path,'Plots/Network/STRINGdb VAT Mitochondrial genes.pdf'))
+  string_db$plot_network(mito.vat_hits, add_link=TRUE, required_score=600, payload_id = payload_mito.vat)
+dev.off()
+
+
+
+svg(file.path(path,'Plots/Network/legend.svg'))
+plot.new()
+legend('center',legend=c("Up","Down"), fill=c("#0392ff", "#ff1100"))
+dev.off()
 ```
