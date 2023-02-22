@@ -15,3 +15,16 @@ Please contact Kelly Bakulski (bakulski@umich.edu) to if you have any questions 
 Research reported in this publication was supported by Eunice Kennedy Shriver National Institute of Child Health & Human Development, National Institutes of Health (NIH) under award P01 HD44232 and R01 HD099096 to VP. MP is supported via Ruth L. Kirschstein Institutional Training Grant T32 ES007062.
 
 ## Script Files
+1_fastqc.sh: using fastQC and multiQC for raw RNA sequencing data
+
+2_trimming.sh: trimming read
+
+3_STAR_gl.sh: aligning raw data to human genome
+
+4_QoRTs.sh: quality control of the aligned data
+
+4_QoRTs_plots.R: saving complied QC plots
+
+5_featureCounts.sh: generating gene counts data
+
+6_diff_exp_analysis.Rmd: differential expression analysis
